@@ -403,7 +403,6 @@ void do_all(wstring dir1)
             to_mark->size_unique=true;
         };
     };
-    //wprintf (L"\n");
 
     // stage 2: remove all file/directory nodes having unique partial hashes
     wcout << L"stage2" << endl;

@@ -7,7 +7,9 @@
 #include <wchar.h>
 #include <assert.h>
 
+#include <iostream>
 #include <string>
+#include <sstream>
 
 #include "utils.hpp"
 #include "sha512.h"
@@ -122,12 +124,19 @@ wstring SHA512_finish_and_get_result (struct sha512_ctx *ctx)
     uint8_t res[64];
     sha512_finish_ctx (ctx, res);
 
-    wstring rt;
+    wostringstream s;
+
+    s << hex; // these are 'sticky' flags
+    s.fill('0');
 
     for (int i=0; i<64; i++)
-        rt+=wstrfmt (L"%02x", res[i]);
+    {
+        s.width (2); // this flag is not 'sticky'
+        s << res[i];
+    };
 
-    return rt;
+    assert (s.str().size()==128);
+    return s.str();
 };
 
 bool NTFS_stream_get_info_if_exist (wstring fname, FILETIME & ft_out, wstring & hash_out)
@@ -177,21 +186,21 @@ void NTFS_stream_save_info (wstring sname, wstring info) // or, overwrite
 
     if (h==INVALID_HANDLE_VALUE)
     {
-        wprintf (L"%s() can't open file/NTFS stream %s\n", WFUNCTION, sname.c_str());
+        wcout << WFUNCTION << L"() can't open file/NTFS stream " << sname << endl;
         //assert (0); // throw exception?
         return; // do nothing - yet!
     };
 
     if (GetFileTime (h, NULL, NULL, &LastWriteTime)==FALSE)
     {
-        wprintf (L"%s(): GetFileTime failed\n", WFUNCTION);
+        wcout << WFUNCTION << L"(): GetFileTime failed for stream " << sname << endl;
         return; // do nothing
     };
     
     DWORD actually_written;
     if (WriteFile (h, info.c_str(), info.size()*sizeof(wchar_t), &actually_written, NULL)==FALSE)
     {
-        wprintf (L"%s() can't write to file/NTFS stream %s\n", WFUNCTION, sname.c_str());
+        wcout << WFUNCTION L"() can't write to file/NTFS stream " << sname << endl;
         assert (0); // throw exception?
     };
 
@@ -201,14 +210,14 @@ void NTFS_stream_save_info (wstring sname, wstring info) // or, overwrite
 
     if (h==INVALID_HANDLE_VALUE)
     {
-        wprintf (L"%s() can't open file/NTFS stream %s\n", WFUNCTION, sname.c_str());
+        wcout << WFUNCTION << L"() can't open file/NTFS stream " << sname << endl;
         //assert (0); // throw exception?
         return; // do nothing - yet!
     };
 
     if (SetFileTime (h, NULL, NULL, &LastWriteTime)==FALSE)
     {
-        wprintf (L"%s(): SetFileTime failed\n", WFUNCTION);
+        wcout << WFUNCTION << L"(): SetFileTime failed";
         return; // do nothing
     };
 
