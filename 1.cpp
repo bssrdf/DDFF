@@ -1,13 +1,6 @@
-//#define UNICODE
-
 #include <stdio.h>
 #include <assert.h>
-//#include <stdlib.h>
 #include <io.h>
-//#include <direct.h>
-//#include <string.h>
-//#include <ctype.h>
-//#include <stdarg.h>
 #include <fcntl.h>
 
 #include <string>
@@ -32,12 +25,8 @@ using namespace std::tr1::placeholders;
 class Node : boost::noncopyable, public enable_shared_from_this<Node>
 {
     private:
-        //DWORD64 memoized_size; // hash level 1
         wstring memoized_partial_hash; // hash level 2, (filesize+SHA512 of first and last 512 bytes) - may be empty
         wstring memoized_full_hash; // hash level 3, may be empty
-        //set<Node> children_L2_sorted;
-        //bool operator==;
-        //bool operator<; // это должно работать!
         bool generate_partial_hash();
         bool generate_full_hash();
 
@@ -50,15 +39,13 @@ class Node : boost::noncopyable, public enable_shared_from_this<Node>
         bool size_unique;
         bool partial_hash_unique;
         bool full_hash_unique;
-        //bool cant_generate_T3_hash;
 
         Node::Node(Node* parent, wstring dir_name, wstring file_name, bool is_dir)
         {
-            //wcout << WFUNCTION << " dir_name=" << dir_name << " file_name=" << file_name << " is_dir=" << is_dir << endl;
             if (dir_name[dir_name.size()-1]!='\\')
             {
-                wcout << WFUNCTION << L"() dir_name=" << dir_name << endl;
-                exit(0);
+                wcout << WFUNCTION << " dir_name=" << dir_name << " file_name=" << file_name << " is_dir=" << is_dir << endl;
+                assert(0);
             };
 
             this->parent=parent;
@@ -113,15 +100,12 @@ class Node : boost::noncopyable, public enable_shared_from_this<Node>
             // there are no unique nodes yet
 
             //wprintf (L"add_children_for_stage1 (). name=[%s]\n", name.c_str());
-            //if (is_dir==false)
             if (parent!=NULL) // this is not root node!
             {
                 wcout << WFUNCTION << L"(): pushing info about " << get_name() << " (size " << size << ")" << endl;
                 out[size].push_back(this);
             };
             if (is_dir)
-                //    for (auto i=children.begin(); i!=children.end(); i++)
-                //        (*i)->add_children_for_stage1 (out);
                 for_each(children.begin(), children.end(), bind(&Node::add_children_for_stage1, _1, ref(out)));
         };
 
@@ -144,8 +128,6 @@ class Node : boost::noncopyable, public enable_shared_from_this<Node>
             };
 
             if (is_dir)
-                //    for (auto i=children.begin(); i!=children.end(); i++)
-                //        (*i)->add_children_for_stage2 (out);
                 for_each(children.begin(), children.end(), bind(&Node::add_children_for_stage2, _1, ref(out)));
         };
 
@@ -167,8 +149,6 @@ class Node : boost::noncopyable, public enable_shared_from_this<Node>
             };
 
             if (is_dir)
-                //    for (auto i=children.begin(); i!=children.end(); i++)
-                //        (*i)->add_children_for_stage3 (out);
                 for_each(children.begin(), children.end(), bind(&Node::add_children_for_stage3, _1, ref(out)));
         };
 
@@ -191,8 +171,6 @@ class Node : boost::noncopyable, public enable_shared_from_this<Node>
             };
 
             if (is_dir)
-                //    for (auto i=children.begin(); i!=children.end(); i++)
-                //        (*i)->add_children_for_stage4 (out);
                 for_each(children.begin(), children.end(), bind(&Node::add_children_for_stage4, _1, ref(out)));
         };
 };
@@ -222,9 +200,6 @@ bool Node::generate_partial_hash()
             SHA512_process_wstring (&ctx, *i);
 
         memoized_partial_hash=SHA512_finish_and_get_result (&ctx);
-        //if (memoized_partial_hash.size()==0)
-        //    return false; // file read error
-        //wprintf (L"dir %s, T2 hash %s\n", name.c_str(), memoized_partial_hash.c_str());
         return true;
     }
     else
@@ -242,8 +217,6 @@ bool Node::generate_partial_hash()
             wcout << WFUNCTION << L"() can't compute partial hash for file [" << get_name() << L"] (file read error?)" << endl;
             return false; // file open error (not absent?)
         };
-
-        //wprintf (L"file %s, T2 hash %s\n", name.c_str(), memoized_partial_hash.c_str());
     };
     return true;
 };
@@ -388,7 +361,7 @@ void do_all(wstring dir1)
 
     // stage 1: remove all (file) nodes having unique file sizes
     wcout << L"stage1" << endl;
-    map<DWORD64, list<Node*>> stage1;
+    map<DWORD64, list<Node*>> stage1; // key is file size
 
     root.add_children_for_stage1 (stage1);
 
@@ -406,7 +379,7 @@ void do_all(wstring dir1)
 
     // stage 2: remove all file/directory nodes having unique partial hashes
     wcout << L"stage2" << endl;
-    map<wstring, list<Node*>> stage2;
+    map<wstring, list<Node*>> stage2; // key is partial hash
     root.add_children_for_stage2 (stage2);
     wcout << L"stage2.size()=" << stage2.size() << endl;
 
@@ -414,28 +387,27 @@ void do_all(wstring dir1)
     {
         if ((*i).second.size()==1)
         {
-            Node* to_remove=(*i).second.front();
-            wcout << L"(stage2) marking as unique (because partial hash is unique): [" << to_remove->get_name() << L"]" << endl;
-            to_remove->partial_hash_unique=true;
+            Node* to_mark=(*i).second.front();
+            wcout << L"(stage2) marking as unique (because partial hash is unique): [" << to_mark->get_name() << L"]" << endl;
+            to_mark->partial_hash_unique=true;
         };
     };
     wcout << endl;
 
     // stage 3: remove all file/directory nodes having unique full hashes
     wcout << L"stage3" << endl;
-    map<wstring, list<Node*>> stage3;
+    map<wstring, list<Node*>> stage3; // key is full hash
     root.add_children_for_stage3 (stage3);
     wcout << L"stage3.size()=" << stage3.size() << endl;
 
     wcout << L"beginning scaning stage3 tbl" << endl;
     for (auto i=stage3.begin(); i!=stage3.end(); i++)
     {
-        //if ((*i).second.size()==1 && (*i).second.front()->is_dir==false)
         if ((*i).second.size()==1)
         {
-            Node* to_remove=(*i).second.front();
-            wcout << L"(stage3) marking as unique: [" << to_remove->get_name() << "] (because full hash is unique)" << endl;
-            to_remove->full_hash_unique=true;
+            Node* to_mark=(*i).second.front();
+            wcout << L"(stage3) marking as unique: [" << to_mark->get_name() << "] (because full hash is unique)" << endl;
+            to_mark->full_hash_unique=true;
         }
         else if ((*i).second.size()>1 && (*i).second.front()->is_dir)
         {
@@ -452,19 +424,21 @@ void do_all(wstring dir1)
 
     // stage 4: dump what left
     wcout << L"stage4" << endl;
-    map<wstring, list<Node*>> stage4;
+    map<wstring, list<Node*>> stage4; // key is full hash
     root.add_children_for_stage4 (stage4);
 
     wcout << L"stage4.size()=" << stage4.size() << endl;
 
-    map<DWORD64, list<Node*>> stage5; // here will be size-sorted nodes
+    map<DWORD64, list<Node*>> stage5; // here will be size-sorted nodes. key is file/dir size
 
     for (auto i=stage4.begin(); i!=stage4.end(); i++)
     {
-        //if ((*i).first.size()==0)
-        //    continue;
         if ((*i).second.size()==1)
+        { 
+            // there shouldn't be there such elements
+            wcout << L"stage4, (*i).second.size()=" << (*i).second.size() << endl;
             continue;
+        };
         if ((*i).second.front()->size==0) // skip zero-length files and directories
             continue;
 
@@ -479,22 +453,16 @@ void do_all(wstring dir1)
     };
 
     // TODO: if (sorted) tuple of directories occuring here more than 3 times...
-    
+
     for (auto i=stage5.rbegin(); i!=stage5.rend(); i++)
     {
         Node* first=(*i).second.front();
-        /*
-        wprintf (L"* similar %s (size %s)\n", 
-                first->is_dir ? L"directories" : L"files", 
-                size_to_string (first->size).c_str());
-        */
+        
         wcout << L"* similar " << (first->is_dir ? wstring(L"directories") : wstring (L"files"))
             << L" (size " << size_to_string (first->size) << ")" << endl;
-
+        
         for (auto l=(*i).second.begin();  l!=(*i).second.end(); l++)
-        {
             wcout << L"[" << (*l)->get_name() << L"]" << endl;
-        };
     };
 
     // cleanup
