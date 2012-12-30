@@ -196,10 +196,7 @@ bool Node::generate_partial_hash()
 
         // here we use the fact set<wstring> is sorted...
 
-        for (auto i=hashes.begin(); i!=hashes.end(); i++)
-            SHA512_process_wstring (&ctx, *i);
-
-        memoized_partial_hash=SHA512_finish_and_get_result (&ctx);
+        memoized_partial_hash=SHA512_process_set_of_wstrings (hashes);
         return true;
     }
     else
@@ -242,13 +239,9 @@ bool Node::generate_full_hash()
 
         // here we use the fact set<wstring> is sorted...
 
-        for (auto i=hashes.begin(); i!=hashes.end(); i++)
-            SHA512_process_wstring (&ctx, *i);
+        memoized_full_hash=SHA512_process_set_of_wstrings (hashes);
 
-        memoized_full_hash=SHA512_finish_and_get_result (&ctx);
-        if (memoized_full_hash.size()==0)
-            return false; // file read error
-          //wprintf (L"dir %s, T2 hash %s\n", name.c_str(), memoized_partial_hash.c_str());
+        //wprintf (L"dir %s, T2 hash %s\n", name.c_str(), memoized_partial_hash.c_str());
     }
     else
     {
@@ -333,6 +326,15 @@ bool Node::collect_info()
         return true;
     };
 };
+    
+uint64_t set_of_Nodes_sum_size(const set<Node*> & s)
+{
+    uint64_t rt=0;
+
+    for (auto i=s.begin(); i!=s.end(); i++)
+        rt+=(*i)->size;
+    return rt;
+};
 
 void do_all(wstring dir1)
 {
@@ -368,14 +370,12 @@ void do_all(wstring dir1)
     wcout << L"stage1.size()=" << stage1.size() << endl;
 
     for (auto i=stage1.begin(); i!=stage1.end(); i++)
-    {
         if ((*i).second.size()==1)
         {
             Node* to_mark=(*i).second.front();
             wcout << L"(stage1) marking as unique: [" << to_mark->get_name() << L"] (unique size " << to_mark->size << L")" << endl;
             to_mark->size_unique=true;
         };
-    };
 
     // stage 2: remove all file/directory nodes having unique partial hashes
     wcout << L"stage2" << endl;
@@ -384,14 +384,12 @@ void do_all(wstring dir1)
     wcout << L"stage2.size()=" << stage2.size() << endl;
 
     for (auto i=stage2.begin(); i!=stage2.end(); i++)
-    {
         if ((*i).second.size()==1)
         {
             Node* to_mark=(*i).second.front();
             wcout << L"(stage2) marking as unique (because partial hash is unique): [" << to_mark->get_name() << L"]" << endl;
             to_mark->partial_hash_unique=true;
         };
-    };
     wcout << endl;
 
     // stage 3: remove all file/directory nodes having unique full hashes
@@ -402,7 +400,6 @@ void do_all(wstring dir1)
 
     wcout << L"beginning scaning stage3 tbl" << endl;
     for (auto i=stage3.begin(); i!=stage3.end(); i++)
-    {
         if ((*i).second.size()==1)
         {
             Node* to_mark=(*i).second.front();
@@ -411,7 +408,8 @@ void do_all(wstring dir1)
         }
         else if ((*i).second.size()>1 && (*i).second.front()->is_dir)
         {
-            // * cut unneeded nodes for keys with more than only 1 value
+            // * cut unneeded (directory type) nodes for keys with more than only 1 value 
+            // (e.g. nodes to be dumped)
             // we just remove children at each node here!
             for (auto l=(*i).second.begin(); l!=(*i).second.end(); l++)
             {
@@ -419,26 +417,22 @@ void do_all(wstring dir1)
                 (*l)->children.clear();
             };
         };
-    };
     wcout << endl;
 
     // stage 4: dump what left
     wcout << L"stage4" << endl;
     map<wstring, list<Node*>> stage4; // key is full hash
-    root.add_children_for_stage4 (stage4);
-
+    root.add_children_for_stage4 (stage4); // add only nodes with all uniques (size, partial hash, full hash)
     wcout << L"stage4.size()=" << stage4.size() << endl;
+
+    // collect all "directory groups"
+
+    // TODO
 
     map<DWORD64, list<Node*>> stage5; // here will be size-sorted nodes. key is file/dir size
 
     for (auto i=stage4.begin(); i!=stage4.end(); i++)
     {
-        if ((*i).second.size()==1)
-        { 
-            // there shouldn't be there such elements
-            wcout << L"stage4, (*i).second.size()=" << (*i).second.size() << endl;
-            continue;
-        };
         if ((*i).second.front()->size==0) // skip zero-length files and directories
             continue;
 
@@ -452,15 +446,13 @@ void do_all(wstring dir1)
         stage5[(*i).second.front()->size]=(*i).second;
     };
 
-    // TODO: if (sorted) tuple of directories occuring here more than 3 times...
-
     for (auto i=stage5.rbegin(); i!=stage5.rend(); i++)
     {
         Node* first=(*i).second.front();
-        
+
         wcout << L"* similar " << (first->is_dir ? wstring(L"directories") : wstring (L"files"))
             << L" (size " << size_to_string (first->size) << ")" << endl;
-        
+
         for (auto l=(*i).second.begin();  l!=(*i).second.end(); l++)
             wcout << L"[" << (*l)->get_name() << L"]" << endl;
     };
