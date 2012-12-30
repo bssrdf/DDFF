@@ -95,18 +95,18 @@ class Node : boost::noncopyable, public enable_shared_from_this<Node>
         };
 
         // adding all files...
-        void add_children_for_stage1 (map<DWORD64, list<Node*>> & out)
+        void add_all_children (map<DWORD64, list<Node*>> & out)
         {
             // there are no unique nodes yet
 
-            //wprintf (L"add_children_for_stage1 (). name=[%s]\n", name.c_str());
+            //wprintf (L"add_all_children (). name=[%s]\n", name.c_str());
             if (parent!=NULL) // this is not root node!
             {
                 wcout << WFUNCTION << L"(): pushing info about " << get_name() << " (size " << size << ")" << endl;
                 out[size].push_back(this);
             };
             if (is_dir)
-                for_each(children.begin(), children.end(), bind(&Node::add_children_for_stage1, _1, ref(out)));
+                for_each(children.begin(), children.end(), bind(&Node::add_all_children, _1, ref(out)));
         };
 
         // partial hashing occuring here
@@ -303,17 +303,14 @@ bool Node::collect_info()
                     continue;
 
                 is_dir=true;
-                //new_name=name + wstring(ff.cFileName) + wstring(L"\\");
                 n=new Node (this, dir_name + wstring(ff.cFileName) + wstring(L"\\"), L"", is_dir); 
             }
             else
             { // it is file
                 is_dir=false;
-                //new_name=name + wstring(ff.cFileName);
                 n=new Node (this, dir_name, wstring(ff.cFileName), is_dir);
             };
 
-            //Node* n=new Node(this, new_name, is_dir);
             if (n->collect_info())
             {
                 children.insert (n);
@@ -334,6 +331,24 @@ uint64_t set_of_Nodes_sum_size(const set<Node*> & s)
     for (auto i=s.begin(); i!=s.end(); i++)
         rt+=(*i)->size;
     return rt;
+};
+
+void mark_nodes_with_unique_sizes (Node* root)
+{
+    wcout << WFUNCTION << endl;
+    map<DWORD64, list<Node*>> stage1; // key is file size
+
+    root->add_all_children (stage1);
+
+    wcout << L"stage1.size()=" << stage1.size() << endl;
+
+    for (auto i=stage1.begin(); i!=stage1.end(); i++)
+        if ((*i).second.size()==1)
+        {
+            Node* to_mark=(*i).second.front();
+            wcout << L"(stage1) marking as unique: [" << to_mark->get_name() << L"] (unique size " << to_mark->size << L")" << endl;
+            to_mark->size_unique=true;
+        };
 };
 
 void do_all(wstring dir1)
@@ -362,20 +377,7 @@ void do_all(wstring dir1)
     wcout << L"all info collected" << endl;
 
     // stage 1: remove all (file) nodes having unique file sizes
-    wcout << L"stage1" << endl;
-    map<DWORD64, list<Node*>> stage1; // key is file size
-
-    root.add_children_for_stage1 (stage1);
-
-    wcout << L"stage1.size()=" << stage1.size() << endl;
-
-    for (auto i=stage1.begin(); i!=stage1.end(); i++)
-        if ((*i).second.size()==1)
-        {
-            Node* to_mark=(*i).second.front();
-            wcout << L"(stage1) marking as unique: [" << to_mark->get_name() << L"] (unique size " << to_mark->size << L")" << endl;
-            to_mark->size_unique=true;
-        };
+    mark_nodes_with_unique_sizes (&root);
 
     // stage 2: remove all file/directory nodes having unique partial hashes
     wcout << L"stage2" << endl;
