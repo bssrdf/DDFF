@@ -401,7 +401,7 @@ void cut_children_for_non_unique_dirs (Node* root)
 void do_all(wstring dir1)
 {
     wstring dir_at_start=get_current_dir();
-    Node root(NULL, L"\\", L"", true);
+    Node* root=new Node(NULL, L"\\", L"", true);
     /*
        Node* n=new Node(&root, L"C:\\Users\\Administrator\\Music\\", true);
        n->collect_info();
@@ -416,26 +416,26 @@ void do_all(wstring dir1)
     //Node n2(&root, L"C:\\Users\\Administrator\\-cracker's things\\", true);
     //Node n2(&root, L"C:\\Users\\Administrator\\Music\\queue\\", true);
     //Node n2(&root, L"C:\\Users\\Administrator\\Music\\", L"", true);
-    Node n2(&root, dir1, L"", true);
-    n2.collect_info();
+    Node* n2=new Node(root, dir1, L"", true);
+    n2->collect_info();
     //root.children.insert (shared_ptr<Node>(&n2)); 
-    root.children.insert (&n2);
+    root->children.insert (n2);
 
     wcout << L"all info collected" << endl;
 
     // stage 1: remove all (file) nodes having unique file sizes
-    mark_nodes_with_unique_sizes (&root);
+    mark_nodes_with_unique_sizes (root);
 
     // stage 2: remove all file/directory nodes having unique partial hashes
-    mark_nodes_with_partial_hashes (&root);
+    mark_nodes_with_partial_hashes (root);
 
     // stage 3: remove all file/directory nodes having unique full hashes
-    mark_nodes_with_full_hashes (&root);
+    mark_nodes_with_full_hashes (root);
 
-    cut_children_for_non_unique_dirs (&root);
+    cut_children_for_non_unique_dirs (root);
 
     map<DWORD64, list<Node*>> stage4; // here will be size-sorted nodes. key is file/dir size
-    root.add_children_for_stage4 (stage4);
+    root->add_children_for_stage4 (stage4);
 
     for (auto i=stage4.rbegin(); i!=stage4.rend(); i++)
     {
