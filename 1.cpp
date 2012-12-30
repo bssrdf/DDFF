@@ -94,12 +94,16 @@ class Node : boost::noncopyable, public enable_shared_from_this<Node>
             return true;
         };
 
+        bool is_full_hash_present()
+        {
+            return memoized_full_hash.size()>0;
+        };
+
         // adding all files...
         void add_all_children (map<DWORD64, list<Node*>> & out)
         {
             // there are no unique nodes yet
 
-            //wprintf (L"add_all_children (). name=[%s]\n", name.c_str());
             if (parent!=NULL) // this is not root node!
             {
                 wcout << WFUNCTION << L"(): pushing info about " << get_name() << " (size " << size << ")" << endl;
@@ -137,9 +141,8 @@ class Node : boost::noncopyable, public enable_shared_from_this<Node>
         // key of 'out' is full hash
         void add_children_for_stage3 (map<wstring, list<Node*>> & out)
         {
-            if (size_unique==false && partial_hash_unique==false)
+            if (size_unique==false && partial_hash_unique==false && parent!=NULL)
             {
-                //wprintf (L"(add_children_for_stage3) partial_hash_unique=false for [%s]\n", name.c_str());
                 wstring s;
                 if (get_full_hash(s))
                 {
@@ -155,24 +158,21 @@ class Node : boost::noncopyable, public enable_shared_from_this<Node>
         // add all nodes except...
         // ignore nodes with size_unique=true OR partial_hash_unique=true OR full_hash_unique=true
         // key of 'out' is full hash
-        void add_children_for_stage4 (map<wstring, list<Node*>> & out)
+        void add_children_for_stage4 (map<DWORD64, list<Node*>> & out)
         {
-            if ((size_unique==false) && (partial_hash_unique==false) && (full_hash_unique==false))
+            if (size_unique==false && partial_hash_unique==false && full_hash_unique==false && parent!=NULL)
             {
-                //wprintf (L"(add_children_for_stage4) partial_hash_unique=false for [%s]\n", name.c_str());
-                wstring s;
-                if (get_full_hash(s))
-                {
-                    out[s].push_back(this);
+                if (is_full_hash_present())
+                { // be sure full hash present
+                    out[size].push_back(this);
                     wcout << WFUNCTION << L"(): pushing info about" << get_name() << endl;
-                    assert (wcout.fail()==false);
-                    assert (wcout.bad()==false);
                  };
             };
 
             if (is_dir)
                 for_each(children.begin(), children.end(), bind(&Node::add_children_for_stage4, _1, ref(out)));
         };
+        
 };
 
 bool Node::generate_partial_hash()
@@ -194,8 +194,7 @@ bool Node::generate_partial_hash()
             hashes.insert(tmp);
         };
 
-        // here we use the fact set<wstring> is sorted...
-
+        // here we use the fact set<wstring> is already sorted...
         memoized_partial_hash=SHA512_process_set_of_wstrings (hashes);
         return true;
     }
@@ -220,9 +219,6 @@ bool Node::generate_partial_hash()
 
 bool Node::generate_full_hash()
 {
-    //if (partial_hash_unique)
-    //    return false;
-
     if (is_dir)
     {
         struct sha512_ctx ctx;
@@ -238,7 +234,6 @@ bool Node::generate_full_hash()
         };
 
         // here we use the fact set<wstring> is sorted...
-
         memoized_full_hash=SHA512_process_set_of_wstrings (hashes);
 
         //wprintf (L"dir %s, T2 hash %s\n", name.c_str(), memoized_partial_hash.c_str());
@@ -439,34 +434,10 @@ void do_all(wstring dir1)
 
     cut_children_for_non_unique_dirs (&root);
 
-    // stage 4: dump what left
-    wcout << L"stage4" << endl;
-    map<wstring, list<Node*>> stage4; // key is full hash
-    root.add_children_for_stage4 (stage4); // add only nodes with all uniques (size, partial hash, full hash)
-    wcout << L"stage4.size()=" << stage4.size() << endl;
+    map<DWORD64, list<Node*>> stage4; // here will be size-sorted nodes. key is file/dir size
+    root.add_children_for_stage4 (stage4);
 
-    // collect all "directory groups"
-
-    // TODO
-
-    map<DWORD64, list<Node*>> stage5; // here will be size-sorted nodes. key is file/dir size
-
-    for (auto i=stage4.begin(); i!=stage4.end(); i++)
-    {
-        if ((*i).second.front()->size==0) // skip zero-length files and directories
-            continue;
-
-        // check if all elements has equal size and same type!
-        for (auto l=(*i).second.begin();  l!=(*i).second.end(); l++)
-        {
-            assert ((*l)->is_dir==(*i).second.front()->is_dir);
-            assert ((*l)->size==(*i).second.front()->size);
-        };
-
-        stage5[(*i).second.front()->size]=(*i).second;
-    };
-
-    for (auto i=stage5.rbegin(); i!=stage5.rend(); i++)
+    for (auto i=stage4.rbegin(); i!=stage4.rend(); i++)
     {
         Node* first=(*i).second.front();
 
