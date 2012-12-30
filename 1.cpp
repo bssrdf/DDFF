@@ -346,9 +346,61 @@ void mark_nodes_with_unique_sizes (Node* root)
         if ((*i).second.size()==1)
         {
             Node* to_mark=(*i).second.front();
-            wcout << L"(stage1) marking as unique: [" << to_mark->get_name() << L"] (unique size " << to_mark->size << L")" << endl;
+            wcout << WFUNCTION << L"() marking as unique: [" << to_mark->get_name() << L"] (unique size " << to_mark->size << L")" << endl;
             to_mark->size_unique=true;
         };
+};
+
+void mark_nodes_with_partial_hashes (Node* root)
+{
+    wcout << WFUNCTION << endl;
+    map<wstring, list<Node*>> stage2; // key is partial hash
+    root->add_children_for_stage2 (stage2);
+    wcout << L"stage2.size()=" << stage2.size() << endl;
+
+    for (auto i=stage2.begin(); i!=stage2.end(); i++)
+        if ((*i).second.size()==1)
+        {
+            Node* to_mark=(*i).second.front();
+            wcout << WFUNCTION << L"() marking as unique (because partial hash is unique): [" << to_mark->get_name() << L"]" << endl;
+            to_mark->partial_hash_unique=true;
+        };
+};
+
+void mark_nodes_with_full_hashes (Node* root)
+{
+    wcout << WFUNCTION << endl;
+    map<wstring, list<Node*>> stage3; // key is full hash
+    root->add_children_for_stage3 (stage3);
+    wcout << L"stage3.size()=" << stage3.size() << endl;
+
+    for (auto i=stage3.begin(); i!=stage3.end(); i++)
+        if ((*i).second.size()==1)
+        {
+            Node* to_mark=(*i).second.front();
+            wcout << WFUNCTION << L"() marking as unique: [" << to_mark->get_name() << "] (because full hash is unique)" << endl;
+            to_mark->full_hash_unique=true;
+        };
+};
+
+void cut_children_for_non_unique_dirs (Node* root)
+{
+    map<wstring, list<Node*>> stage3; // key is full hash
+    root->add_children_for_stage3 (stage3);
+    for (auto i=stage3.begin(); i!=stage3.end(); i++)
+    {
+        if ((*i).second.size()>1 && (*i).second.front()->is_dir)
+        {
+            // * cut unneeded (directory type) nodes for keys with more than only 1 value 
+            // (e.g. nodes to be dumped)
+            // we just remove children at each node here!
+            for (auto l=(*i).second.begin(); l!=(*i).second.end(); l++)
+            {
+                wcout << L"cutting children of node [" << (*l)->get_name() << L"]" << endl;
+                (*l)->children.clear();
+            };
+        };
+    };
 };
 
 void do_all(wstring dir1)
@@ -380,46 +432,12 @@ void do_all(wstring dir1)
     mark_nodes_with_unique_sizes (&root);
 
     // stage 2: remove all file/directory nodes having unique partial hashes
-    wcout << L"stage2" << endl;
-    map<wstring, list<Node*>> stage2; // key is partial hash
-    root.add_children_for_stage2 (stage2);
-    wcout << L"stage2.size()=" << stage2.size() << endl;
-
-    for (auto i=stage2.begin(); i!=stage2.end(); i++)
-        if ((*i).second.size()==1)
-        {
-            Node* to_mark=(*i).second.front();
-            wcout << L"(stage2) marking as unique (because partial hash is unique): [" << to_mark->get_name() << L"]" << endl;
-            to_mark->partial_hash_unique=true;
-        };
-    wcout << endl;
+    mark_nodes_with_partial_hashes (&root);
 
     // stage 3: remove all file/directory nodes having unique full hashes
-    wcout << L"stage3" << endl;
-    map<wstring, list<Node*>> stage3; // key is full hash
-    root.add_children_for_stage3 (stage3);
-    wcout << L"stage3.size()=" << stage3.size() << endl;
+    mark_nodes_with_full_hashes (&root);
 
-    wcout << L"beginning scaning stage3 tbl" << endl;
-    for (auto i=stage3.begin(); i!=stage3.end(); i++)
-        if ((*i).second.size()==1)
-        {
-            Node* to_mark=(*i).second.front();
-            wcout << L"(stage3) marking as unique: [" << to_mark->get_name() << "] (because full hash is unique)" << endl;
-            to_mark->full_hash_unique=true;
-        }
-        else if ((*i).second.size()>1 && (*i).second.front()->is_dir)
-        {
-            // * cut unneeded (directory type) nodes for keys with more than only 1 value 
-            // (e.g. nodes to be dumped)
-            // we just remove children at each node here!
-            for (auto l=(*i).second.begin(); l!=(*i).second.end(); l++)
-            {
-                wcout << L"cutting children of node [" << (*l)->get_name() << L"]" << endl;
-                (*l)->children.clear();
-            };
-        };
-    wcout << endl;
+    cut_children_for_non_unique_dirs (&root);
 
     // stage 4: dump what left
     wcout << L"stage4" << endl;
