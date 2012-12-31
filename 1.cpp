@@ -39,6 +39,7 @@ class Node : boost::noncopyable, public enable_shared_from_this<Node>
         bool size_unique;
         bool partial_hash_unique;
         bool full_hash_unique;
+        bool already_dumped;
 
         Node::Node(Node* parent, wstring dir_name, wstring file_name, bool is_dir)
         {
@@ -54,6 +55,7 @@ class Node : boost::noncopyable, public enable_shared_from_this<Node>
             this->is_dir=is_dir;
             size=0; // yet
             size_unique=partial_hash_unique=full_hash_unique=false;
+            already_dumped=false;
         };
         ~Node()
         {
@@ -155,6 +157,22 @@ class Node : boost::noncopyable, public enable_shared_from_this<Node>
                 for_each(children.begin(), children.end(), bind(&Node::add_children_for_stage3, _1, ref(out)));
         };
 
+        void add_all_unique_full_hashed_children_only_files (map<wstring, set<Node*>> & out)
+        {
+            if (!size_unique && !partial_hash_unique && !full_hash_unique && parent!=NULL && !is_dir)
+            {
+                wstring s;
+                if (get_full_hash(s))
+                {
+                    out[s].insert(this);
+                    wcout << WFUNCTION L"(): pushing info about " << get_name() << endl;
+                };
+            };
+
+            if (is_dir)
+                for_each(children.begin(), children.end(), bind(&Node::add_all_unique_full_hashed_children_only_files, _1, ref(out)));
+        };
+
         // add all nodes except...
         // ignore nodes with size_unique=true OR partial_hash_unique=true OR full_hash_unique=true
         // key of 'out' is full hash
@@ -166,13 +184,25 @@ class Node : boost::noncopyable, public enable_shared_from_this<Node>
                 { // be sure full hash present
                     out[size].push_back(this);
                     wcout << WFUNCTION << L"(): pushing info about" << get_name() << endl;
-                 };
+                };
             };
 
             if (is_dir)
                 for_each(children.begin(), children.end(), bind(&Node::add_all_unique_full_hashed_children, _1, ref(out)));
         };
-        
+};
+
+wostream& operator<< (wostream &out, const Node &in)
+{
+    out << "Node. size=" << in.size << " ";
+
+    if (in.is_dir)
+        out << "directory. dir_name=" << in.dir_name;
+    else
+        out << "file. dir_name=" << in.dir_name << " file_name=" << in.file_name;
+    out << " size_unique=" << in.size_unique << " partial_hash_unique=" << in.partial_hash_unique << 
+        " full_hash_unique=" << in.full_hash_unique << endl;
+    return out;
 };
 
 bool Node::generate_partial_hash()
@@ -346,7 +376,7 @@ void mark_nodes_with_unique_sizes (Node* root)
         };
 };
 
-void mark_nodes_with_partial_hashes (Node* root)
+void mark_nodes_with_unique_partial_hashes (Node* root)
 {
     wcout << WFUNCTION << endl;
     map<wstring, list<Node*>> stage2; // key is partial hash
@@ -362,7 +392,7 @@ void mark_nodes_with_partial_hashes (Node* root)
         };
 };
 
-void mark_nodes_with_full_hashes (Node* root)
+void mark_nodes_with_unique_full_hashes (Node* root)
 {
     wcout << WFUNCTION << endl;
     map<wstring, list<Node*>> stage3; // key is full hash
@@ -384,16 +414,87 @@ void cut_children_for_non_unique_dirs (Node* root)
     root->add_children_for_stage3 (stage3);
     for (auto i=stage3.begin(); i!=stage3.end(); i++)
     {
-        if ((*i).second.size()>1 && (*i).second.front()->is_dir)
+        if (i->second.size()>1 && i->second.front()->is_dir)
         {
             // * cut unneeded (directory type) nodes for keys with more than only 1 value 
             // (e.g. nodes to be dumped)
             // we just remove children at each node here!
-            for (auto l=(*i).second.begin(); l!=(*i).second.end(); l++)
+            for (auto l=i->second.begin(); l!=i->second.end(); l++)
             {
                 wcout << L"cutting children of node [" << (*l)->get_name() << L"]" << endl;
                 (*l)->children.clear();
             };
+        };
+    };
+};
+
+wostream& operator<< (wostream &out, const set<wstring> &in)
+{
+    std::copy(in.begin(), in.end(), std::ostream_iterator<wstring, wchar_t>(wcout, L" "));
+    return out;
+};
+
+wostream& operator<< (wostream &out, const set<Node*> &in)
+{
+    out << "set<Node*>:" << endl;
+    for (auto i=in.begin(); i!=in.end(); i++)
+        out << *(*i) << endl;
+    out << "*** end ***" << endl;
+    return out;
+};
+
+void output_set_wstring_as_multiline (wostream &out, const set<wstring> &in)
+{
+    std::copy(in.begin(), in.end(), std::ostream_iterator<wstring, wchar_t>(wcout, L"\n"));
+};
+
+void work_on_fuzzy_equal_dirs (Node *root) 
+{
+    map<wstring, set<Node*>> groups_of_similar_files;
+    root->add_all_unique_full_hashed_children_only_files (groups_of_similar_files);
+
+    // key is dir_group, value is set of Nodes for corresponding files
+    map<wstring, set<wstring>> dir_groups_files;
+    map<wstring, set<wstring>> dir_groups_names;
+    map<wstring, uint64_t> group_size;
+    map<wstring, set<Node*>> dir_groups_links;
+
+    for (auto i=groups_of_similar_files.begin(); i!=groups_of_similar_files.end(); i++)
+    {
+        set<wstring> directories;
+        set<wstring> files;
+        set<Node*> links;
+
+        // here we work with ONE file laying in different directories
+        for (auto l=i->second.begin(); l!=i->second.end(); l++)
+        {
+            directories.insert ((*l)->dir_name);
+            files.insert ((*l)->file_name);
+            links.insert (*l);
+        };
+        
+        if (directories.size()==1) // this mean, some similar files withine ONE directory, do not report
+            continue;
+
+        wstring dir_group=SHA512_process_set_of_wstrings (directories);
+        dir_groups_files[dir_group].insert (files.begin(), files.end());
+        dir_groups_names[dir_group].insert (directories.begin(), directories.end());
+        group_size[dir_group]=group_size[dir_group] + set_of_Nodes_sum_size(i->second);
+        dir_groups_links[dir_group].insert (links.begin(), links.end());
+    };
+    
+    for (auto g=dir_groups_files.begin(); g!=dir_groups_files.end(); g++)
+    {
+        if (g->second.size()>2 && group_size[g->first]>0)
+        {
+            for (auto q=dir_groups_links[g->first].begin(); q!=dir_groups_links[g->first].end(); q++)
+                (*q)->already_dumped=true;
+            wcout << L"* common files in directories (" << size_to_string(group_size[g->first]) << ")" << endl;
+            wcout << L"** directories:" << endl;
+            output_set_wstring_as_multiline (wcout, dir_groups_names[g->first]);
+            wcout << L"** files:" << endl;
+            output_set_wstring_as_multiline (wcout, g->second);
+            wcout << endl;
         };
     };
 };
@@ -403,12 +504,15 @@ void dump_info_stage4 (map<DWORD64, list<Node*>> & stage4)
     for (auto i=stage4.rbegin(); i!=stage4.rend(); i++)
     {
         Node* first=(*i).second.front();
+        if (first->already_dumped)
+            continue;
 
         wcout << L"* similar " << (first->is_dir ? wstring(L"directories") : wstring (L"files"))
             << L" (size " << size_to_string (first->size) << ")" << endl;
 
         for (auto l=(*i).second.begin();  l!=(*i).second.end(); l++)
             wcout << L"[" << (*l)->get_name() << L"]" << endl;
+        wcout << endl;
     };
 };
 
@@ -441,12 +545,14 @@ void do_all(wstring dir1)
     mark_nodes_with_unique_sizes (root);
 
     // stage 2: remove all file/directory nodes having unique partial hashes
-    mark_nodes_with_partial_hashes (root);
+    mark_nodes_with_unique_partial_hashes (root);
 
     // stage 3: remove all file/directory nodes having unique full hashes
-    mark_nodes_with_full_hashes (root);
+    mark_nodes_with_unique_full_hashes (root);
 
     cut_children_for_non_unique_dirs (root);
+
+    work_on_fuzzy_equal_dirs (root);
 
     map<DWORD64, list<Node*>> stage4; // here will be size-sorted nodes. key is file/dir size
     root->add_all_unique_full_hashed_children (stage4);
