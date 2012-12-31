@@ -158,7 +158,7 @@ class Node : boost::noncopyable, public enable_shared_from_this<Node>
         // add all nodes except...
         // ignore nodes with size_unique=true OR partial_hash_unique=true OR full_hash_unique=true
         // key of 'out' is full hash
-        void add_children_for_stage4 (map<DWORD64, list<Node*>> & out)
+        void add_all_unique_full_hashed_children (map<DWORD64, list<Node*>> & out)
         {
             if (size_unique==false && partial_hash_unique==false && full_hash_unique==false && parent!=NULL)
             {
@@ -170,7 +170,7 @@ class Node : boost::noncopyable, public enable_shared_from_this<Node>
             };
 
             if (is_dir)
-                for_each(children.begin(), children.end(), bind(&Node::add_children_for_stage4, _1, ref(out)));
+                for_each(children.begin(), children.end(), bind(&Node::add_all_unique_full_hashed_children, _1, ref(out)));
         };
         
 };
@@ -398,6 +398,20 @@ void cut_children_for_non_unique_dirs (Node* root)
     };
 };
 
+void dump_info_stage4 (map<DWORD64, list<Node*>> & stage4) 
+{
+    for (auto i=stage4.rbegin(); i!=stage4.rend(); i++)
+    {
+        Node* first=(*i).second.front();
+
+        wcout << L"* similar " << (first->is_dir ? wstring(L"directories") : wstring (L"files"))
+            << L" (size " << size_to_string (first->size) << ")" << endl;
+
+        for (auto l=(*i).second.begin();  l!=(*i).second.end(); l++)
+            wcout << L"[" << (*l)->get_name() << L"]" << endl;
+    };
+};
+
 void do_all(wstring dir1)
 {
     wstring dir_at_start=get_current_dir();
@@ -435,18 +449,8 @@ void do_all(wstring dir1)
     cut_children_for_non_unique_dirs (root);
 
     map<DWORD64, list<Node*>> stage4; // here will be size-sorted nodes. key is file/dir size
-    root->add_children_for_stage4 (stage4);
-
-    for (auto i=stage4.rbegin(); i!=stage4.rend(); i++)
-    {
-        Node* first=(*i).second.front();
-
-        wcout << L"* similar " << (first->is_dir ? wstring(L"directories") : wstring (L"files"))
-            << L" (size " << size_to_string (first->size) << ")" << endl;
-
-        for (auto l=(*i).second.begin();  l!=(*i).second.end(); l++)
-            wcout << L"[" << (*l)->get_name() << L"]" << endl;
-    };
+    root->add_all_unique_full_hashed_children (stage4);
+    dump_info_stage4 (stage4);
 
     // cleanup
     set_current_dir (dir_at_start);
