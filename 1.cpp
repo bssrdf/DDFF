@@ -510,8 +510,8 @@ void dump_info_stage4 (map<DWORD64, list<Node*>> & stage4)
         wcout << L"* similar " << (first->is_dir ? wstring(L"directories") : wstring (L"files"))
             << L" (size " << size_to_string (first->size) << ")" << endl;
 
-        for (auto l=(*i).second.begin();  l!=(*i).second.end(); l++)
-            wcout << L"[" << (*l)->get_name() << L"]" << endl;
+        for_each((*i).second.begin(), (*i).second.end(), [](Node* e){ wcout << e->get_name() << endl; });
+
         wcout << endl;
     };
 };
