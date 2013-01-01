@@ -15,6 +15,7 @@
 #include <windows.h>
 
 #include <boost/utility.hpp>
+#include <boost/variant.hpp>
 
 #include "utils.hpp"
 #include "sha512.h"
@@ -448,7 +449,85 @@ void output_set_wstring_as_multiline (wostream &out, const set<wstring> &in)
     std::copy(in.begin(), in.end(), std::ostream_iterator<wstring, wchar_t>(wcout, L"\n"));
 };
 
-void work_on_fuzzy_equal_dirs (Node *root) 
+class Result_fuzzy_equal_dirs
+{
+    private:
+        set<wstring> directories;
+        set<wstring> files;
+        DWORD64 size;
+    public:
+        Result_fuzzy_equal_dirs (set<wstring> & directories, set<wstring> & files, DWORD64 size)
+        {
+            this->directories=directories;
+            this->files=files;
+            this->size=size;
+        };
+        void dump(wostream & out)
+        {
+            out << L"* common files in directories (" << size_to_string(size) << L")" << endl;
+            out << L"** directories:" << endl;
+            output_set_wstring_as_multiline (out, directories);
+            out << L"** files:" << endl;
+            output_set_wstring_as_multiline (out, files);
+            out << endl;           
+        };
+};
+
+class Result_equal_files_dirs
+{
+    private:
+        bool is_dir;
+        DWORD64 size;
+        set<wstring> strings;
+    public:
+        Result_equal_files_dirs (bool is_dir, DWORD64 size, set<wstring> strings)
+        {
+            this->is_dir=is_dir;
+            this->size=size;
+            this->strings=strings;
+        };
+        void dump(wostream & out)
+        {
+            out << L"* similar " << (is_dir ? wstring(L"directories") : wstring (L"files"))
+                << L" (size " << size_to_string (size) << ")" << endl;
+            output_set_wstring_as_multiline (out, strings);
+            out << endl;
+        };
+};
+
+class Result
+{
+    private:
+        boost::variant<Result_fuzzy_equal_dirs*, Result_equal_files_dirs*> result;
+    public:
+        Result (Result_fuzzy_equal_dirs*in)
+        {
+            result=in;
+        };
+        Result (Result_equal_files_dirs* in)
+        {
+            result=in;
+        };
+        void dump(wostream & out)
+        {
+            if (result.which()==0)
+            {
+                Result_fuzzy_equal_dirs* tmp=boost::get<Result_fuzzy_equal_dirs*>(result);
+                tmp->dump(out);
+            }
+            else if (result.which()==1)
+            {
+                Result_equal_files_dirs* tmp=boost::get<Result_equal_files_dirs*>(result);
+                tmp->dump(out);
+            }
+            else
+            {
+                assert (0);
+            };
+        };
+};
+
+void work_on_fuzzy_equal_dirs (Node *root, map<DWORD64, Result*> & out) 
 {
     map<wstring, set<Node*>> groups_of_similar_files;
     root->add_all_unique_full_hashed_children_only_files (groups_of_similar_files);
@@ -489,17 +568,22 @@ void work_on_fuzzy_equal_dirs (Node *root)
         {
             for (auto q=dir_groups_links[g->first].begin(); q!=dir_groups_links[g->first].end(); q++)
                 (*q)->already_dumped=true;
+            /*
             wcout << L"* common files in directories (" << size_to_string(group_size[g->first]) << ")" << endl;
             wcout << L"** directories:" << endl;
             output_set_wstring_as_multiline (wcout, dir_groups_names[g->first]);
             wcout << L"** files:" << endl;
             output_set_wstring_as_multiline (wcout, g->second);
             wcout << endl;
+            */
+            DWORD64 group_sz=group_size[g->first];
+            Result_fuzzy_equal_dirs* n=new Result_fuzzy_equal_dirs(dir_groups_names[g->first], g->second, group_sz);
+            out[group_sz]=new Result (n);
         };
     };
 };
 
-void dump_info_stage4 (map<DWORD64, list<Node*>> & stage4) 
+void dump_info_stage4 (map<DWORD64, list<Node*>> & stage4, map<DWORD64, Result*> & out) 
 {
     for (auto i=stage4.rbegin(); i!=stage4.rend(); i++)
     {
@@ -507,12 +591,18 @@ void dump_info_stage4 (map<DWORD64, list<Node*>> & stage4)
         if (first->already_dumped)
             continue;
 
-        wcout << L"* similar " << (first->is_dir ? wstring(L"directories") : wstring (L"files"))
-            << L" (size " << size_to_string (first->size) << ")" << endl;
+        set<wstring> strings;
 
-        for_each((*i).second.begin(), (*i).second.end(), [](Node* e){ wcout << e->get_name() << endl; });
+        //for_each((*i).second.begin(), (*i).second.end(), [](Node* e){ strings.insert(e->get_name()); });
+        for (auto j=(*i).second.begin(); j!=(*i).second.end(); j++)
+            strings.insert((*j)->get_name());
 
-        wcout << endl;
+        out[first->size]=new Result(new Result_equal_files_dirs (first->is_dir, first->size, strings));
+
+        //wcout << L"* similar " << (first->is_dir ? wstring(L"directories") : wstring (L"files"))
+        //    << L" (size " << size_to_string (first->size) << ")" << endl;
+        //for_each((*i).second.begin(), (*i).second.end(), [](Node* e){ wcout << e->get_name() << endl; });
+        //wcout << endl;
     };
 };
 
@@ -552,11 +642,18 @@ void do_all(wstring dir1)
 
     cut_children_for_non_unique_dirs (root);
 
-    work_on_fuzzy_equal_dirs (root);
+    map<DWORD64, Result*> results; // automatically sorted map!
+
+    work_on_fuzzy_equal_dirs (root, results);
 
     map<DWORD64, list<Node*>> stage4; // here will be size-sorted nodes. key is file/dir size
     root->add_all_unique_full_hashed_children (stage4);
-    dump_info_stage4 (stage4);
+    dump_info_stage4 (stage4, results); // FIXME: fn to be renamed
+
+    // dump results
+    //for_each(results.begin(), results.end(), [](Result* r){ (*r).second->dump(wcout); });
+    for (auto i=results.rbegin(); i!=results.rend(); i++)
+        (*i).second->dump(wcout);
 
     // cleanup
     set_current_dir (dir_at_start);
