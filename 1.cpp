@@ -23,9 +23,14 @@
 using namespace std;
 using namespace std::tr1::placeholders;
 
+class Node;
+uint64_t be_sure_all_Nodes_have_same_size_and_return_it(const set<Node*> & n);
+wostream& operator<< (wostream &out, const Node &in);
+wostream& operator<< (wostream &out, const set<Node*> &in);
+
 class Node : boost::noncopyable, public enable_shared_from_this<Node>
 {
-    private:
+    public:
         wstring memoized_partial_hash; // hash level 2, (filesize+SHA512 of first and last 512 bytes) - may be empty
         wstring memoized_full_hash; // hash level 3, may be empty
         bool generate_partial_hash();
@@ -174,23 +179,57 @@ class Node : boost::noncopyable, public enable_shared_from_this<Node>
                 for_each(children.begin(), children.end(), bind(&Node::add_all_unique_full_hashed_children_only_files, _1, ref(out)));
         };
 
-        // add all nodes except...
-        // ignore nodes with size_unique=true OR partial_hash_unique=true OR full_hash_unique=true
-        // key of 'out' is full hash
-        void add_all_unique_full_hashed_children (map<DWORD64, list<Node*>> & out)
+        void add_all_unique_full_hashed_children (map<wstring, set<Node*>> & out)
         {
-            if (size_unique==false && partial_hash_unique==false && full_hash_unique==false && parent!=NULL)
+            wcout << WFUNCTION L"(map<wstring, set<Node*>>): begin" << endl;
+            if (!size_unique && !partial_hash_unique && !full_hash_unique && parent!=NULL)
             {
-                if (is_full_hash_present())
-                { // be sure full hash present
-                    out[size].push_back(this);
-                    wcout << WFUNCTION << L"(): pushing info about" << get_name() << endl;
+                wstring s;
+                if (get_full_hash(s))
+                {
+                    out[s].insert(this);
+                    wcout << WFUNCTION L"(map<wstring, set<Node*>>): pushing info about " << get_name() << endl;
+                    assert (out[s].size()>0);
                 };
             };
 
             if (is_dir)
                 for_each(children.begin(), children.end(), bind(&Node::add_all_unique_full_hashed_children, _1, ref(out)));
         };
+};
+
+void _add_all_unique_full_hashed_children (Node* root, map<DWORD64, set<set<Node*>>> & out)
+{
+    wcout << WFUNCTION L"(): begin" << endl;
+
+    map<wstring, set<Node*>> tmp;
+    root->add_all_unique_full_hashed_children (tmp);
+    wcout << WFUNCTION << "(map<DWORD64, set<set<Node*>>>) tmp.size()=" << tmp.size() << endl;
+    wcout << "info about root:" << endl;
+    wcout << *root;
+    for (auto i=tmp.begin(); i!=tmp.end(); i++)
+    {
+        assert ((*i).second.size()>0);
+        uint64_t common_size=be_sure_all_Nodes_have_same_size_and_return_it ((*i).second);
+        out[common_size].insert ((*i).second);
+        wcout << WFUNCTION << "(map<DWORD64, set<set<Node*>>>) inserting pack, common_size=" << common_size << endl; 
+    };
+};
+
+uint64_t be_sure_all_Nodes_have_same_size_and_return_it(const set<Node*> & n)
+{
+    assert (n.size()>0);
+    uint64_t rt=(*n.begin())->size;
+    for (auto i=n.begin(); i!=n.end(); i++)
+    {
+        if ((*i)->size!=rt)
+        {
+            wcout << WFUNCTION << " check failed. all nodes:" << endl;
+            wcout << n;
+            exit(0);
+        };
+    };
+    return rt;
 };
 
 wostream& operator<< (wostream &out, const Node &in)
@@ -201,8 +240,17 @@ wostream& operator<< (wostream &out, const Node &in)
         out << "directory. dir_name=" << in.dir_name;
     else
         out << "file. dir_name=" << in.dir_name << " file_name=" << in.file_name;
+    
     out << " size_unique=" << in.size_unique << " partial_hash_unique=" << in.partial_hash_unique << 
-        " full_hash_unique=" << in.full_hash_unique << endl;
+        " full_hash_unique=" << in.full_hash_unique;
+
+    if (in.memoized_partial_hash.size()>0)
+        out << " memoized_partial_hash=" << in.memoized_partial_hash;
+    if (in.memoized_full_hash.size()>0)
+        out << " memoized_full_hash=" << in.memoized_full_hash;
+    
+    out << endl;
+
     return out;
 };
 
@@ -212,7 +260,7 @@ bool Node::generate_partial_hash()
     {
         struct sha512_ctx ctx;
         sha512_init_ctx (&ctx);
-        set<wstring> hashes;
+        multiset<wstring> hashes;
 
         for (auto i=children.begin(); i!=children.end(); i++)
         {
@@ -226,8 +274,10 @@ bool Node::generate_partial_hash()
         };
 
         // here we use the fact set<wstring> is already sorted...
-        memoized_partial_hash=SHA512_process_set_of_wstrings (hashes);
-        return true;
+        memoized_partial_hash=SHA512_process_multiset_of_wstrings (hashes);
+
+        wcout << WFUNCTION << " dir=" << dir_name << " hashes.size()=" << hashes.size() 
+            << " memoized_partial_hash=" << memoized_partial_hash << endl;
     }
     else
     {
@@ -254,7 +304,7 @@ bool Node::generate_full_hash()
     {
         struct sha512_ctx ctx;
         sha512_init_ctx (&ctx);
-        set<wstring> hashes;
+        multiset<wstring> hashes;
 
         for (auto i=children.begin(); i!=children.end(); i++)
         {
@@ -265,9 +315,10 @@ bool Node::generate_full_hash()
         };
 
         // here we use the fact set<wstring> is sorted...
-        memoized_full_hash=SHA512_process_set_of_wstrings (hashes);
+        memoized_full_hash=SHA512_process_multiset_of_wstrings (hashes);
 
-        //wprintf (L"dir %s, T2 hash %s\n", name.c_str(), memoized_partial_hash.c_str());
+        wcout << WFUNCTION << " dir=" << dir_name << " hashes.size()=" << hashes.size() 
+            << " memoized_full_hash=" << memoized_full_hash << endl;
     }
     else
     {
@@ -527,7 +578,7 @@ class Result
         };
 };
 
-void work_on_fuzzy_equal_dirs (Node *root, map<DWORD64, Result*> & out) 
+void work_on_fuzzy_equal_dirs (Node *root, map<DWORD64, set<Result*>> & out) 
 {
     map<wstring, set<Node*>> groups_of_similar_files;
     root->add_all_unique_full_hashed_children_only_files (groups_of_similar_files);
@@ -578,31 +629,40 @@ void work_on_fuzzy_equal_dirs (Node *root, map<DWORD64, Result*> & out)
             */
             DWORD64 group_sz=group_size[g->first];
             Result_fuzzy_equal_dirs* n=new Result_fuzzy_equal_dirs(dir_groups_names[g->first], g->second, group_sz);
-            out[group_sz]=new Result (n);
+            out[group_sz].insert (new Result (n));
         };
     };
 };
 
-void dump_info_stage4 (map<DWORD64, list<Node*>> & stage4, map<DWORD64, Result*> & out) 
+void dump_info_stage4 (map<DWORD64, set<set<Node*>>> & stage4, map<DWORD64, set<Result*>> & out) 
 {
-    for (auto i=stage4.rbegin(); i!=stage4.rend(); i++)
+    for (auto m=stage4.rbegin(); m!=stage4.rend(); m++)
     {
-        Node* first=(*i).second.front();
-        if (first->already_dumped)
-            continue;
+        wcout << WFUNCTION << " workout size=" << (*m).first << endl;
+        for (auto i=(*m).second.begin(); i!=(*m).second.end(); i++)
+        {
+            Node* first=*((*i).begin());
+            if (first->already_dumped)
+            {
+                wcout << WFUNCTION << " already dumped" << endl;
+                continue;
+            };
 
-        set<wstring> strings;
+            set<wstring> full_dirfilenames;
 
-        //for_each((*i).second.begin(), (*i).second.end(), [](Node* e){ strings.insert(e->get_name()); });
-        for (auto j=(*i).second.begin(); j!=(*i).second.end(); j++)
-            strings.insert((*j)->get_name());
+            //for_each((*i).second.begin(), (*i).second.end(), [](Node* e){ strings.insert(e->get_name()); });
+            for (auto j=(*i).begin(); j!=(*i).end(); j++)
+                full_dirfilenames.insert((*j)->get_name());
 
-        out[first->size]=new Result(new Result_equal_files_dirs (first->is_dir, first->size, strings));
+            wcout << WFUNCTION << " ** inserting as a pack:" << endl;
+            output_set_wstring_as_multiline (wcout, full_dirfilenames);
+            out[first->size].insert (new Result(new Result_equal_files_dirs (first->is_dir, first->size, full_dirfilenames)));
 
-        //wcout << L"* similar " << (first->is_dir ? wstring(L"directories") : wstring (L"files"))
-        //    << L" (size " << size_to_string (first->size) << ")" << endl;
-        //for_each((*i).second.begin(), (*i).second.end(), [](Node* e){ wcout << e->get_name() << endl; });
-        //wcout << endl;
+            //wcout << L"* similar " << (first->is_dir ? wstring(L"directories") : wstring (L"files"))
+            //    << L" (size " << size_to_string (first->size) << ")" << endl;
+            //for_each((*i).second.begin(), (*i).second.end(), [](Node* e){ wcout << e->get_name() << endl; });
+            //wcout << endl;
+        };
     };
 };
 
@@ -642,18 +702,22 @@ void do_all(wstring dir1)
 
     cut_children_for_non_unique_dirs (root);
 
-    map<DWORD64, Result*> results; // automatically sorted map!
+    map<DWORD64, set<Result*>> results; // automatically sorted map!
 
     work_on_fuzzy_equal_dirs (root, results);
 
-    map<DWORD64, list<Node*>> stage4; // here will be size-sorted nodes. key is file/dir size
-    root->add_all_unique_full_hashed_children (stage4);
+    map<DWORD64, set<set<Node*>>> stage4; // here will be size-sorted nodes. key is file/dir size
+    _add_all_unique_full_hashed_children (root, stage4);
+    wcout << "stage4.size()=" << stage4.size() << endl;
     dump_info_stage4 (stage4, results); // FIXME: fn to be renamed
+
+    wcout << "* results:" << endl;
 
     // dump results
     //for_each(results.begin(), results.end(), [](Result* r){ (*r).second->dump(wcout); });
     for (auto i=results.rbegin(); i!=results.rend(); i++)
-        (*i).second->dump(wcout);
+        for (auto r=(*i).second.begin(); r!=(*i).second.end(); r++)
+            (*r)->dump(wcout);
 
     // cleanup
     set_current_dir (dir_at_start);

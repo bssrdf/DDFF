@@ -443,6 +443,15 @@ void SHA512_process_set_of_wstrings (struct sha512_ctx *ctx, set<wstring> s)
         SHA512_process_wstring (ctx, *l);
 };
 
+wstring SHA512_process_multiset_of_wstrings (multiset<wstring> s)
+{
+    struct sha512_ctx ctx;
+    sha512_init_ctx (&ctx);      
+    for (auto l=s.begin();  l!=s.end(); l++)
+        SHA512_process_wstring (&ctx, *l);
+    return SHA512_finish_and_get_result (&ctx);
+};
+
 wstring SHA512_process_set_of_wstrings (set<wstring> s)
 {
     struct sha512_ctx ctx;
