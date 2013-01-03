@@ -26,9 +26,10 @@ using namespace std;
 using namespace std::tr1::placeholders;
 
 class Node;
-uint64_t be_sure_all_Nodes_have_same_size_and_return_it(const set<Node*> & n);
+typedef set<Node*> Node_group;
+uint64_t be_sure_all_Nodes_have_same_size_and_return_it(const Node_group & n);
 wostream& operator<< (wostream &out, const Node &in);
-wostream& operator<< (wostream &out, const set<Node*> &in);
+wostream& operator<< (wostream &out, const Node_group &in);
 
 class Node : boost::noncopyable, public enable_shared_from_this<Node>
 {
@@ -76,7 +77,7 @@ class Node : boost::noncopyable, public enable_shared_from_this<Node>
                 return dir_name + file_name;
         };
 
-        set<Node*> children; // (dir only)
+        Node_group children; // (dir only)
         bool collect_info();
         FileSize get_size() const
         {
@@ -114,7 +115,7 @@ class Node : boost::noncopyable, public enable_shared_from_this<Node>
         };
 
         // adding all nodes...
-        void add_all_children (map<FileSize, set<Node*>> & out)
+        void add_all_children (map<FileSize, Node_group> & out)
         {
             // there are no unique nodes yet
 
@@ -153,14 +154,14 @@ class Node : boost::noncopyable, public enable_shared_from_this<Node>
         // add all nodes except...
         // ignore nodes with size_unique=true OR partial_hash_unique=true
         // key of 'out' is full hash
-        void add_children_for_stage3 (map<wstring, list<Node*>> & out)
+        void add_children_for_stage3 (map<wstring, Node_group> & out)
         {
             if (!size_unique && !partial_hash_unique && parent!=NULL)
             {
                 wstring s;
                 if (get_full_hash(s))
                 {
-                    out[s].push_back(this);
+                    out[s].insert(this);
                     //wcout << WFUNCTION L"(): pushing info about " << get_name() << endl;
                 };
             };
@@ -169,7 +170,7 @@ class Node : boost::noncopyable, public enable_shared_from_this<Node>
                 for_each(children.begin(), children.end(), bind(&Node::add_children_for_stage3, _1, ref(out)));
         };
 
-        void add_all_nonunique_full_hashed_children_only_files (map<wstring, set<Node*>> & out)
+        void add_all_nonunique_full_hashed_children_only_files (map<wstring, Node_group> & out)
         {
             if (!size_unique && !partial_hash_unique && !full_hash_unique && parent!=NULL && !is_dir)
             {
@@ -185,7 +186,7 @@ class Node : boost::noncopyable, public enable_shared_from_this<Node>
                 for_each(children.begin(), children.end(), bind(&Node::add_all_nonunique_full_hashed_children_only_files, _1, ref(out)));
         };
 
-        void add_all_nonunique_full_hashed_children (map<wstring, set<Node*>> & out)
+        void add_all_nonunique_full_hashed_children (map<wstring, Node_group> & out)
         {
             if (!size_unique && !partial_hash_unique && !full_hash_unique && parent!=NULL)
             {
@@ -193,7 +194,6 @@ class Node : boost::noncopyable, public enable_shared_from_this<Node>
                 if (get_full_hash(s))
                 {
                     out[s].insert(this);
-                    //wcout << WFUNCTION L"(map<wstring, set<Node*>>): pushing info about " << get_name() << endl;
                     assert (out[s].size()>0);
                 };
             };
@@ -203,44 +203,38 @@ class Node : boost::noncopyable, public enable_shared_from_this<Node>
         };
 };
 
-map<FileSize, set<set<Node*>>> _add_all_nonunique_full_hashed_children (Node* root)
+map<FileSize, set<Node_group>> _add_all_nonunique_full_hashed_children (Node* root)
 {
-    map<FileSize, set<set<Node*>>> rt;
+    map<FileSize, set<Node_group>> rt;
 
-    map<wstring, set<Node*>> tmp;
+    map<wstring, Node_group> tmp;
     root->add_all_nonunique_full_hashed_children (tmp);
-    for (auto i=tmp.begin(); i!=tmp.end(); i++)
+    BOOST_FOREACH(auto &i, tmp | boost::adaptors::map_values)
     {
-        if ((*i).second.size()==1)
+        if (i.size()==1)
         {
-            //wcout << WFUNCTION << " " << __LINE__ << endl;
-            //wcout << (*i).second;
-            //exit(0);
             // do not report. this "orphaned" nodes may be here after fuzzy directory comparisons
         }
         else
         {
-            uint64_t common_size=be_sure_all_Nodes_have_same_size_and_return_it ((*i).second);
-            rt[common_size].insert ((*i).second);
-            //wcout << WFUNCTION << "(map<FileSize, set<set<Node*>>>) inserting pack, common_size=" << common_size << endl; 
+            uint64_t common_size=be_sure_all_Nodes_have_same_size_and_return_it (i);
+            rt[common_size].insert (i);
         };
     };
     return rt;
 };
 
-uint64_t be_sure_all_Nodes_have_same_size_and_return_it(const set<Node*> & n)
+uint64_t be_sure_all_Nodes_have_same_size_and_return_it(const Node_group & n)
 {
     assert (n.size()>0);
     uint64_t rt=(*n.begin())->size;
-    for (auto i=n.begin(); i!=n.end(); i++)
-    {
-        if ((*i)->size!=rt)
+    for (auto &i : n)
+        if (i->size!=rt)
         {
             wcout << WFUNCTION << " check failed. all nodes:" << endl;
             wcout << n;
             exit(0);
         };
-    };
     return rt;
 };
 
@@ -281,12 +275,12 @@ bool Node::generate_partial_hash()
         sha512_init_ctx (&ctx);
         multiset<wstring> hashes;
 
-        for (auto i=children.begin(); i!=children.end(); i++)
+        for (auto &i : children)
         {
             wstring tmp;
-            if ((*i)->get_partial_hash(tmp)==false)
+            if (i->get_partial_hash(tmp)==false)
             {
-                wcout << WFUNCTION << L"() won't compute partial hash for dir or file [" << get_name() << L"]" << endl;
+                //wcout << WFUNCTION << L"() won't compute partial hash for dir or file [" << get_name() << L"]" << endl;
                 return false; // this directory cannot be computed!
             };
             hashes.insert(tmp);
@@ -295,22 +289,21 @@ bool Node::generate_partial_hash()
         // here we use the fact set<wstring> is already sorted...
         memoized_partial_hash=SHA512_process_multiset_of_wstrings (hashes);
 
-        wcout << WFUNCTION << " dir=" << dir_name << " hashes.size()=" << hashes.size() 
-            << " memoized_partial_hash=" << memoized_partial_hash << endl;
+        //wcout << WFUNCTION << " dir=" << dir_name << " hashes.size()=" << hashes.size() << " memoized_partial_hash=" << memoized_partial_hash << endl;
     }
     else
     {
         if (size_unique)
         {
-            wcout << WFUNCTION << L"() won't compute partial hash for file [" << get_name() << L"] (because it's have unique size" << endl;
+            //wcout << WFUNCTION << L"() won't compute partial hash for file [" << get_name() << L"] (because it's have unique size" << endl;
             return false;
         };
 
-        wcout << L"computing partial hash for [" << get_name() << L"]" << endl;
+        //wcout << L"computing partial hash for [" << get_name() << L"]" << endl;
         set_current_dir (dir_name);
         if (partial_SHA512_of_file (file_name, memoized_partial_hash)==false)
         {
-            wcout << WFUNCTION << L"() can't compute partial hash for file [" << get_name() << L"] (file read error?)" << endl;
+            //wcout << WFUNCTION << L"() can't compute partial hash for file [" << get_name() << L"] (file read error?)" << endl;
             return false; // file open error (not absent?)
         };
     };
@@ -325,10 +318,10 @@ bool Node::generate_full_hash()
         sha512_init_ctx (&ctx);
         multiset<wstring> hashes;
 
-        for (auto i=children.begin(); i!=children.end(); i++)
+        for (auto &i : children)
         {
             wstring tmp;
-            if ((*i)->get_full_hash(tmp)==false)
+            if (i->get_full_hash(tmp)==false)
                 return false;
             hashes.insert(tmp);
         };
@@ -336,15 +329,14 @@ bool Node::generate_full_hash()
         // here we use the fact set<wstring> is sorted...
         memoized_full_hash=SHA512_process_multiset_of_wstrings (hashes);
 
-        wcout << WFUNCTION << " dir=" << dir_name << " hashes.size()=" << hashes.size() 
-            << " memoized_full_hash=" << memoized_full_hash << endl;
+        //wcout << WFUNCTION << " dir=" << dir_name << " hashes.size()=" << hashes.size() << " memoized_full_hash=" << memoized_full_hash << endl;
     }
     else
     {
         if (size_unique || partial_hash_unique)
             return false;
 
-        wcout << L"computing full hash for " << get_name() << "\n";
+        //wcout << L"computing full hash for " << get_name() << "\n";
         set_current_dir (dir_name);
         if (SHA512_of_file (file_name, memoized_full_hash)==false)
             return false; // file read error (or absent)
@@ -361,9 +353,7 @@ bool Node::collect_info()
     if (is_dir==false)
     {
         set_current_dir (dir_name);
-        bool rt=get_file_size (file_name, size);
-        //wprintf (L"file size for [%s] is %I64d, rt=%d\n", name.c_str(), size, rt);
-        return rt;
+        return get_file_size (file_name, size);
     }
     else
     {
@@ -372,13 +362,13 @@ bool Node::collect_info()
 
         if (set_current_dir (dir_name)==false)
         {
-            wcout << L"cannot change directory to [" << dir_name << "]\n";
+            wcout << L"cannot change directory to [" << dir_name << "]" << endl;
             return false;
         };
 
         if ((hfile=FindFirstFile (L"*", &ff))==INVALID_HANDLE_VALUE)
         {
-            wprintf (L"FindFirstFile() failed\n");
+            wcout << L"FindFirstFile() failed" << endl;
             return false;
         };
 
@@ -420,19 +410,19 @@ bool Node::collect_info()
     };
 };
     
-uint64_t set_of_Nodes_sum_size(const set<Node*> & s)
+uint64_t set_of_Nodes_sum_size(const Node_group & s)
 {
     uint64_t rt=0;
 
-    for (auto i=s.begin(); i!=s.end(); i++)
-        rt+=(*i)->size;
+    for (auto &i : s)
+        rt+=i->size;
     return rt;
 };
 
 void mark_nodes_having_unique_sizes (Node* root)
 {
     wcout << WFUNCTION << endl;
-    map<FileSize, set<Node*>> stage1; // key is file size
+    map<FileSize, Node_group> stage1; // key is file size
 
     root->add_all_children (stage1);
 
@@ -462,7 +452,7 @@ void mark_nodes_having_unique_partial_hashes (Node* root)
 
 void mark_nodes_with_unique_full_hashes (Node* root)
 {
-    map<wstring, list<Node*>> stage3; // key is full hash
+    map<wstring, Node_group> stage3; // key is full hash
     root->add_children_for_stage3 (stage3);
     //wcout << L"stage3.size()=" << stage3.size() << endl;
 
@@ -476,19 +466,19 @@ void mark_nodes_with_unique_full_hashes (Node* root)
 
 void cut_children_for_non_unique_dirs (Node* root)
 {
-    map<wstring, list<Node*>> stage3; // key is full hash
+    map<wstring, Node_group> stage3; // key is full hash
     root->add_children_for_stage3 (stage3);
-    for (auto i=stage3.begin(); i!=stage3.end(); i++)
+    BOOST_FOREACH(auto &i, stage3 | boost::adaptors::map_values)
     {
-        if (i->second.size()>1 && i->second.front()->is_dir)
+        if (i.size()>1 && (*i.begin())->is_dir)
         {
             // * cut unneeded (directory type) nodes for keys with more than only 1 value 
             // (e.g. nodes to be dumped)
             // we just remove children at each node here!
-            for (auto l=i->second.begin(); l!=i->second.end(); l++)
+            for (auto &l : i)
             {
-                wcout << L"cutting children of node [" << (*l)->get_name() << L"]" << endl;
-                (*l)->children.clear();
+                //wcout << L"cutting children of node [" << (*l)->get_name() << L"]" << endl;
+                l->children.clear();
             };
         };
     };
@@ -500,9 +490,9 @@ wostream& operator<< (wostream &out, const set<wstring> &in)
     return out;
 };
 
-wostream& operator<< (wostream &out, const set<Node*> &in)
+wostream& operator<< (wostream &out, const Node_group &in)
 {
-    out << "set<Node*>:" << endl;
+    out << "Node_group:" << endl;
     for (auto i=in.begin(); i!=in.end(); i++)
         out << *(*i) << endl;
     out << "*** end ***" << endl;
@@ -592,28 +582,30 @@ class Result
         };
 };
 
+typedef wstring Dir_group_id;
+
 void work_on_fuzzy_equal_dirs (Node *root, map<FileSize, set<Result*>> & out) 
 {
-    map<wstring, set<Node*>> groups_of_similar_files;
+    map<wstring, Node_group> groups_of_similar_files;
     root->add_all_nonunique_full_hashed_children_only_files (groups_of_similar_files);
 
     // key is dir_group, value is set of Nodes for corresponding files
-    map<wstring, set<wstring>> dir_groups_files;
-    map<wstring, set<wstring>> dir_groups_names;
-    map<wstring, uint64_t> group_size;
-    map<wstring, set<Node*>> dir_groups_links;
+    map<Dir_group_id, set<wstring>> dir_groups_files;
+    map<Dir_group_id, set<wstring>> dir_groups_names;
+    map<Dir_group_id, FileSize> group_size;
+    map<Dir_group_id, Node_group> dir_groups_links;
 
-    for (auto i=groups_of_similar_files.begin(); i!=groups_of_similar_files.end(); i++)
+    BOOST_FOREACH(auto &i, groups_of_similar_files | boost::adaptors::map_values)
     {
         set<wstring> directories, files;
-        set<Node*> links;
+        Node_group links;
 
         // here we work with ONE file laying in different directories
-        for (auto l=i->second.begin(); l!=i->second.end(); l++)
+        for (auto &l : i)
         {
-            directories.insert ((*l)->dir_name);
-            files.insert ((*l)->file_name);
-            links.insert (*l);
+            directories.insert (l->dir_name);
+            files.insert (l->file_name);
+            links.insert (l);
         };
         
         if (directories.size()==1) // this mean, some similar files withine ONE directory, do not report
@@ -622,45 +614,48 @@ void work_on_fuzzy_equal_dirs (Node *root, map<FileSize, set<Result*>> & out)
         wstring dir_group=SHA512_process_set_of_wstrings (directories);
         dir_groups_files[dir_group].insert (files.begin(), files.end());
         
-        wcout << WFUNCTION << " inserting these files to dir_groups_files:" << endl;
-        output_set_wstring_as_multiline (wcout, files);
+        //wcout << WFUNCTION << " inserting these files to dir_groups_files:" << endl;
+        //output_set_wstring_as_multiline (wcout, files);
 
         dir_groups_names[dir_group].insert (directories.begin(), directories.end());
-        group_size[dir_group]=group_size[dir_group] + set_of_Nodes_sum_size(i->second);
+        group_size[dir_group]=group_size[dir_group] + set_of_Nodes_sum_size(i);
         dir_groups_links[dir_group].insert (links.begin(), links.end());
     };
     
-    for (auto g=dir_groups_files.begin(); g!=dir_groups_files.end(); g++)
+    for (auto &g : dir_groups_files)
     {
-        if (g->second.size()>2 && group_size[g->first]>0)
+        Dir_group_id dir_group_id;
+        set<wstring> files;
+        tie(dir_group_id, files)=g;
+        if (files.size()>2 && group_size[dir_group_id]>0)
         {
-            for (auto q=dir_groups_links[g->first].begin(); q!=dir_groups_links[g->first].end(); q++)
-                (*q)->already_dumped=true;
-            FileSize group_sz=group_size[g->first];
-            Result_fuzzy_equal_dirs* n=new Result_fuzzy_equal_dirs(dir_groups_names[g->first], g->second, group_sz);
+            for (auto &q : dir_groups_links[dir_group_id])
+                q->already_dumped=true;
+            FileSize group_sz=group_size[dir_group_id];
+            Result_fuzzy_equal_dirs* n=new Result_fuzzy_equal_dirs(dir_groups_names[dir_group_id], files, group_sz);
             out[group_sz].insert (new Result (n));
         };
     };
 };
 
-void add_exact_results (map<FileSize, set<set<Node*>>> & stage4, map<FileSize, set<Result*>> & out) 
+void add_exact_results (map<FileSize, set<Node_group>> & stage4, map<FileSize, set<Result*>> & out) 
 {
-    for (auto m=stage4.rbegin(); m!=stage4.rend(); m++)
+    BOOST_FOREACH(auto &sets, stage4 | boost::adaptors::map_values)
     {
-        for (auto i=(*m).second.begin(); i!=(*m).second.end(); i++)
+        for (auto &s : sets)
         {
-            Node* first=*((*i).begin());
+            Node* first=*(s.begin());
             if (first->already_dumped)
                 continue;
 
             set<wstring> full_dirfilenames;
 
-            for (auto j=(*i).begin(); j!=(*i).end(); j++)
-                full_dirfilenames.insert((*j)->get_name());
+            for (auto &j : s)
+                full_dirfilenames.insert(j->get_name());
 
             assert (full_dirfilenames.size()>1); // otherwise, it's a bug somewhere
-            wcout << WFUNCTION << " ** inserting as a pack:" << endl;
-            output_set_wstring_as_multiline (wcout, full_dirfilenames);
+            //wcout << WFUNCTION << " ** inserting as a pack:" << endl;
+            //output_set_wstring_as_multiline (wcout, full_dirfilenames);
             out[first->size].insert (new Result(new Result_equal_files_dirs (first->is_dir, first->size, full_dirfilenames)));
         };
     };
@@ -706,7 +701,7 @@ void do_all(wstring dir1)
 
     work_on_fuzzy_equal_dirs (root, results);
 
-    map<FileSize, set<set<Node*>>> stage4; // here will be size-sorted nodes. key is file/dir size
+    map<FileSize, set<Node_group>> stage4; // here will be size-sorted nodes. key is file/dir size
     stage4=_add_all_nonunique_full_hashed_children (root);
     //wcout << "stage4.size()=" << stage4.size() << endl;
     add_exact_results (stage4, results); 

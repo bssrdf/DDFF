@@ -182,8 +182,8 @@ void NTFS_stream_save_info (wstring sname, wstring info) // or, overwrite
 
     if (h==INVALID_HANDLE_VALUE)
     {
-        wcout << WFUNCTION << L"() can't open file/NTFS stream " << sname << endl;
-        //assert (0); // throw exception?
+        //wcout << WFUNCTION << L"() can't open file/NTFS stream " << sname << endl;
+        // throw exception?
         return; // do nothing - yet!
     };
 
@@ -196,7 +196,7 @@ void NTFS_stream_save_info (wstring sname, wstring info) // or, overwrite
     DWORD actually_written;
     if (WriteFile (h, info.c_str(), info.size()*sizeof(wchar_t), &actually_written, NULL)==FALSE)
     {
-        wcout << WFUNCTION L"() can't write to file/NTFS stream " << sname << endl;
+        //wcout << WFUNCTION L"() can't write to file/NTFS stream " << sname << endl;
         assert (0); // throw exception?
     };
 
