@@ -414,13 +414,13 @@ bool set_current_dir(wstring dir)
     return B==TRUE;
 };
 
-void SHA512_process_set_of_wstrings (struct sha512_ctx *ctx, set<wstring> s)
+void SHA512_process (struct sha512_ctx *ctx, set<wstring> s)
 {
     for (wstring st : s)
         SHA512_process_wstring (ctx, st);
 };
 
-wstring SHA512_process_multiset_of_wstrings (multiset<wstring> s)
+wstring SHA512_process (multiset<wstring> s)
 {
     struct sha512_ctx ctx;
     sha512_init_ctx (&ctx);      
@@ -429,11 +429,11 @@ wstring SHA512_process_multiset_of_wstrings (multiset<wstring> s)
     return SHA512_finish_and_get_result (&ctx);
 };
 
-wstring SHA512_process_set_of_wstrings (set<wstring> s)
+wstring SHA512_process (set<wstring> s)
 {
     struct sha512_ctx ctx;
     sha512_init_ctx (&ctx);      
-    SHA512_process_set_of_wstrings (&ctx, s);
+    SHA512_process (&ctx, s);
     return SHA512_finish_and_get_result (&ctx);
 }
 
