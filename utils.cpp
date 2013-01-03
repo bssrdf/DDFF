@@ -68,7 +68,7 @@ wstring wstrfmt (const wchar_t * szFormat, ...)
     return rt;
 };
 
-bool get_file_size (wstring name, DWORD64 & out)
+bool get_file_size (wstring name, FileSize & out)
 {
     HANDLE h=CreateFile(name.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 
@@ -87,7 +87,7 @@ bool get_file_size (wstring name, DWORD64 & out)
 
     if (lo==INVALID_FILE_SIZE && last_err!=NO_ERROR)
     {
-        wprintf (L"%s(): lo=INVALID_FILE_SIZE, last_err=%08X: %s\n", WFUNCTION, last_err, GetLastError_to_message (last_err).c_str());
+        wcout << WFUNCTION L"(): lo=INVALID_FILE_SIZE, last_err=0x" << hex << last_err << " " << GetLastError_to_message (last_err) << endl;
         rt=false;
     }
     else
@@ -95,8 +95,6 @@ bool get_file_size (wstring name, DWORD64 & out)
         rt=true;
         out=((DWORD64)hi << 32) | lo;
     };
-
-    //wprintf (L"%s() hi=%08X, lo=%08X, out=%I64X/%I64d\n", WFUNCTION, hi, lo, out, out);
 
     CloseHandle (h);
 
@@ -168,7 +166,6 @@ bool NTFS_stream_get_info_if_exist (wstring fname, FILETIME & ft_out, wstring & 
         //wprintf (L"ft_out.dwHighDateTime=%08X\n", ft_out.dwHighDateTime);
         //wprintf (L"ft_out.dwLowDateTime=%08X\n", ft_out.dwLowDateTime);
         //wprintf (L"buf2=%s\n", buf2);
-        //assert(0);
     };
 
     hash_out=wstring (buf2);
@@ -251,7 +248,7 @@ bool SHA512_of_file (wstring fname, wstring & rt)
         //wprintf (L"%s(): Got full SHA512 from %s file\n", WFUNCTION, fname.c_str());
         if (ft_from_stream.dwLowDateTime==LastWriteTime.dwLowDateTime && ft_from_stream.dwHighDateTime==LastWriteTime.dwHighDateTime)
         {
-            //wprintf (L"timestamp correct - we will use that info!\n");
+            // timestamp correct - we'll use that info!
             return true;
         }
         else
@@ -262,7 +259,6 @@ bool SHA512_of_file (wstring fname, wstring & rt)
 
     struct sha512_ctx ctx;
     sha512_init_ctx (&ctx);
-    //sha512_process_bytes (&size, sizeof(size), &ctx);
 
     uint8_t* buf=(uint8_t*)malloc(FULL_HASH_BUFSIZE);
 
@@ -303,24 +299,6 @@ void sha512_test()
     assert (result==wstring(L"07e547d9586f6a73f73fbac0435ed76951218fb7d0c8d788a309d785436bbb642e93a252a954f23912547d1e8a3b5ed6e1bfd7097821233fa0538f3db854fee6"));
 };
 
-#include <boost/uuid/sha1.hpp>
-
-void sha1_test()
-{
-    boost::uuids::detail::sha1 tmp;
-    char *s1="The quick brown fox jumps over the lazy dog";
-
-    //boost::uuids::detail::sha1::digest_type result;
-    unsigned int result[5];
-    tmp.process_bytes (s1, strlen(s1));
-    tmp.get_digest(result);
-    assert (result[0]==0x2fd4e1c6);
-    assert (result[1]==0x7a2d28fc);
-    assert (result[2]==0xed849ee1);
-    assert (result[3]==0xbb76e739);
-    assert (result[4]==0x1b93eb12);
-};
-
 void SHA512_process_wstring (struct sha512_ctx *ctx, wstring s)
 {
     const wchar_t* tmp=s.c_str();
@@ -336,7 +314,7 @@ bool partial_SHA512_of_file (wstring fname, wstring & out)
     if (h==INVALID_HANDLE_VALUE)
     {
         DWORD err=GetLastError();
-        wprintf (L"%s() can't open file %s: %s\n", WFUNCTION, fname.c_str(), GetLastError_to_message (err).c_str());
+        wcout << WFUNCTION << L"() can't open file " << fname.c_str() << " " << GetLastError_to_message (err) << endl;
         return false; // throw exception?
     };
 
@@ -367,14 +345,13 @@ bool partial_SHA512_of_file (wstring fname, wstring & out)
 
     struct sha512_ctx ctx;
     sha512_init_ctx (&ctx);
-    //sha512_process_bytes (&size, sizeof(size), &ctx);
 
     uint8_t buf[PARTIAL_HASH_BUFSIZE];
 
     memset (buf, 0, PARTIAL_HASH_BUFSIZE);
     DWORD actually_read;
 
-    DWORD64 filesize;
+    FileSize filesize;
     if (get_file_size (fname, filesize)==false)
     {
         wprintf (L"%s(): get_file_size(%s) failed\n", WFUNCTION, fname.c_str());
@@ -420,7 +397,7 @@ bool partial_SHA512_of_file (wstring fname, wstring & out)
     return true;
 };
 
-wstring size_to_string (DWORD64 i)
+wstring size_to_string (FileSize i)
 {
     if (i>1000000000)
         return wstrfmt (L"~%dG", i/1000000000);
@@ -439,16 +416,16 @@ bool set_current_dir(wstring dir)
 
 void SHA512_process_set_of_wstrings (struct sha512_ctx *ctx, set<wstring> s)
 {
-    for (auto l=s.begin();  l!=s.end(); l++)
-        SHA512_process_wstring (ctx, *l);
+    for (wstring st : s)
+        SHA512_process_wstring (ctx, st);
 };
 
 wstring SHA512_process_multiset_of_wstrings (multiset<wstring> s)
 {
     struct sha512_ctx ctx;
     sha512_init_ctx (&ctx);      
-    for (auto l=s.begin();  l!=s.end(); l++)
-        SHA512_process_wstring (&ctx, *l);
+    for (wstring st : s)
+        SHA512_process_wstring (&ctx, st);
     return SHA512_finish_and_get_result (&ctx);
 };
 
