@@ -75,8 +75,8 @@ bool get_file_size (wstring name, FileSize & out)
     if (h==INVALID_HANDLE_VALUE)
     {
         DWORD err=GetLastError();
-        wprintf (L"%s(%s): CreateFile() failed: %s", WFUNCTION, name.c_str(), GetLastError_to_message (err).c_str());
-        wprintf (L"(current dir is %s)\n", get_current_dir ().c_str());
+        //wprintf (L"%s(%s): CreateFile() failed: %s", WFUNCTION, name.c_str(), GetLastError_to_message (err).c_str());
+        //wprintf (L"(current dir is %s)\n", get_current_dir ().c_str());
         return false;
     };
 
