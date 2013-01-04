@@ -9,6 +9,7 @@
 
 #include <string>
 #include <set>
+#include <list>
 
 using namespace std;
 
@@ -22,6 +23,7 @@ bool set_current_dir(wstring dir);
 void SHA512_process (struct sha512_ctx *ctx, string s);
 void SHA512_process (struct sha512_ctx *ctx, set<string> s);
 string SHA512_process (multiset<string> s);
+string SHA512_process (list<string> s);
 string SHA512_process (set<string> s);
 string SHA512_process (set<wstring> s);
 string SHA512_finish_and_get_result (struct sha512_ctx *ctx);

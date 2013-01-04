@@ -89,7 +89,18 @@ class Node : boost::noncopyable
             return true;
         };
 
-        bool get_full_hash(Full_hash & out)
+        Partial_hash get_partial_hash()
+        {
+            if (memoized_partial_hash.size()==0)
+                if (generate_partial_hash()==false)
+                {
+                    assert (0);
+                };
+            assert (memoized_partial_hash.size()!=0);
+            return memoized_partial_hash;
+        };
+
+       bool get_full_hash(Full_hash & out)
         {
             if (memoized_full_hash.size()==0)
                 if (generate_full_hash()==false)
@@ -99,6 +110,17 @@ class Node : boost::noncopyable
             return true;
         };
 
+        Full_hash get_full_hash()
+        {
+            if (memoized_full_hash.size()==0)
+                if (generate_full_hash()==false)
+                {
+                    assert(0);
+                };
+            assert (memoized_full_hash.size()!=0);
+            return memoized_full_hash;
+        };
+ 
         bool is_partial_hash_present() const
         {
             return memoized_partial_hash.size()>0;
@@ -129,16 +151,8 @@ class Node : boost::noncopyable
         {
             if (!size_unique && parent!=NULL)
             {
-                Partial_hash s;
-                if (get_partial_hash(s))
-                {
-                    //wcout << WFUNCTION L"(): pushing info about " << get_name() << endl;
-                    out[s].insert(this);
-                }
-                else
-                {
-                    //wcout << WFUNCTION L"(): can't get partial hash for " << get_name() << endl;
-                };
+                if (generate_partial_hash())
+                    out[get_partial_hash()].insert(this);
             };
 
             if (is_dir)
@@ -153,12 +167,8 @@ class Node : boost::noncopyable
         {
             if (!size_unique && !partial_hash_unique && parent!=NULL)
             {
-                Full_hash s;
-                if (get_full_hash(s))
-                {
-                    out[s].insert(this);
-                    //wcout << WFUNCTION L"(): pushing info about " << get_name() << endl;
-                };
+                if (generate_full_hash())
+                    out[get_full_hash()].insert(this);
             };
 
             if (is_dir)
@@ -169,9 +179,8 @@ class Node : boost::noncopyable
         {
             if (!size_unique && !partial_hash_unique && !full_hash_unique && parent!=NULL && !is_dir)
             {
-                Full_hash s;
-                if (get_full_hash(s))
-                    out[s].insert(this);
+                if (generate_full_hash())
+                    out[get_full_hash()].insert(this);
             };
 
             if (is_dir)
@@ -182,9 +191,8 @@ class Node : boost::noncopyable
         {
             if (!size_unique && !partial_hash_unique && !full_hash_unique && parent!=NULL)
             {
-                Full_hash s;
-                if (get_full_hash(s))
-                    out[s].insert(this);
+                if (generate_full_hash())
+                    out[get_full_hash()].insert(this);
             };
 
             if (is_dir)
@@ -265,39 +273,32 @@ bool Node::generate_partial_hash()
 
     if (is_dir)
     {
-        multiset<Partial_hash> hashes;
+        // can't do set here (there can be multiple files with same content)
+        // can't do multiset here (transform() wouldn't work)
+        list<Partial_hash> hashes;
 
-        for (auto &i : children)
+        // can partial hash be generated for each children?
+        if (all_of (children.cbegin(), children.cend(), [](Node *n) -> bool { return n->generate_partial_hash(); }))
         {
-            Partial_hash tmp;
-            if (i->get_partial_hash(tmp)==false)
-            {
-                //wcout << WFUNCTION << L"() won't compute partial hash for dir or file [" << get_name() << L"]" << endl;
-                return false; // this directory cannot be computed!
-            };
-            hashes.insert(tmp);
-        };
+            hashes.insert (hashes.begin(), children.size(), "");
+            transform(children.begin(), children.end(), hashes.begin(), [](Node* n) -> Partial_hash { return n->get_partial_hash(); });
 
-        // here we use the fact set<wstring> is already sorted...
-        memoized_partial_hash=SHA512_process (hashes);
-
-        //wcout << WFUNCTION << " dir=" << dir_name << " hashes.size()=" << hashes.size() << " memoized_partial_hash=" << memoized_partial_hash << endl;
+            multiset<Partial_hash> sorted_hashes;
+            sorted_hashes.insert (hashes.begin(), hashes.end());
+            // here we use the fact multiset<Partial_hash> is already sorted...
+            memoized_partial_hash=SHA512_process (sorted_hashes);
+        }
+        else
+            return false;
     }
     else
     {
         if (size_unique)
-        {
-            //wcout << WFUNCTION << L"() won't compute partial hash for file [" << get_name() << L"] (because it's have unique size" << endl;
             return false;
-        };
 
         //wcout << L"computing partial hash for [" << get_name() << L"]" << endl;
         set_current_dir (dir_name);
-        if (partial_SHA512_of_file (file_name, memoized_partial_hash)==false)
-        {
-            //wcout << WFUNCTION << L"() can't compute partial hash for file [" << get_name() << L"] (file read error?)" << endl;
-            return false; // file open error (not absent?)
-        };
+        return (partial_SHA512_of_file (file_name, memoized_partial_hash));
     };
     return true;
 };
@@ -309,20 +310,23 @@ bool Node::generate_full_hash()
 
     if (is_dir)
     {
-        multiset<Full_hash> hashes;
+        // can't do set here (there can be multiple files with same content)
+        // can't do multiset here (transform() wouldn't work)
+        list<Full_hash> hashes;
 
-        for (auto &i : children)
+        // can partial hash be generated for each children?
+        if (all_of (children.cbegin(), children.cend(), [](Node *n) -> bool { return n->generate_full_hash(); }))
         {
-            Full_hash tmp;
-            if (i->get_full_hash(tmp)==false)
-                return false;
-            hashes.insert(tmp);
-        };
+            hashes.insert (hashes.begin(), children.size(), "");
+            transform(children.begin(), children.end(), hashes.begin(), [](Node* n) -> Full_hash { return n->get_full_hash(); });
 
-        // here we use the fact set<wstring> is sorted...
-        memoized_full_hash=SHA512_process (hashes);
-
-        //wcout << WFUNCTION << " dir=" << dir_name << " hashes.size()=" << hashes.size() << " memoized_full_hash=" << memoized_full_hash << endl;
+            multiset<Full_hash> sorted_hashes;
+            sorted_hashes.insert (hashes.begin(), hashes.end());
+            // here we use the fact multiset<Full_hash> is already sorted...
+            memoized_full_hash=SHA512_process (sorted_hashes);
+        }
+        else
+            return false;
     }
     else
     {
@@ -331,11 +335,7 @@ bool Node::generate_full_hash()
 
         //wcout << L"computing full hash for " << get_name() << "\n";
         set_current_dir (dir_name);
-        if (SHA512_of_file (file_name, memoized_full_hash)==false)
-            return false; // file read error (or absent)
-         //wprintf (L"computed.\n");
-
-        //wprintf (L"file %s, T2 hash %s\n", name.c_str(), memoized_partial_hash.c_str());
+        return SHA512_of_file (file_name, memoized_full_hash);
     };
     return true;
 };

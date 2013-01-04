@@ -10,6 +10,7 @@
 #include <sstream>
 #include <fstream>
 #include <set>
+#include <list>
 
 #include "utils.hpp"
 #include "sha512.h"
@@ -460,6 +461,15 @@ void SHA512_process (struct sha512_ctx *ctx, set<wstring> s)
 };
 
 string SHA512_process (multiset<string> s)
+{
+    struct sha512_ctx ctx;
+    sha512_init_ctx (&ctx);      
+    for (string st : s)
+        SHA512_process_string (&ctx, st);
+    return SHA512_finish_and_get_result (&ctx);
+};
+
+string SHA512_process (list<string> s)
 {
     struct sha512_ctx ctx;
     sha512_init_ctx (&ctx);      
