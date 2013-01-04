@@ -18,16 +18,19 @@ wstring wstrfmt (const wchar_t * szFormat, ...);
 bool get_file_size (wstring name, FileSize & out);
 wstring get_current_dir ();
 bool set_current_dir(wstring dir);
-void SHA512_process (struct sha512_ctx *ctx, wstring s);
-void SHA512_process (struct sha512_ctx *ctx, set<wstring> s);
-wstring SHA512_process (multiset<wstring> s);
-wstring SHA512_process (set<wstring> s);
-wstring SHA512_finish_and_get_result (struct sha512_ctx *ctx);
-bool SHA512_of_file (wstring fname, wstring & out);
+
+void SHA512_process (struct sha512_ctx *ctx, string s);
+void SHA512_process (struct sha512_ctx *ctx, set<string> s);
+string SHA512_process (multiset<string> s);
+string SHA512_process (set<string> s);
+string SHA512_process (set<wstring> s);
+string SHA512_finish_and_get_result (struct sha512_ctx *ctx);
+bool SHA512_of_file (wstring fname, string & out);
+bool partial_SHA512_of_file (wstring name, string & out);
+
 void sha512_test();
 void sha1_test();
-bool partial_SHA512_of_file (wstring name, wstring & out);
 wstring size_to_string (FileSize i);
-bool NTFS_stream_get_info_if_exist (wstring fname, FILETIME & ft_out, wstring & hash_out);
-void NTFS_stream_save_info (wstring fname, wstring info);
+bool NTFS_stream_get_info_if_exist (wstring fname, FILETIME & ft_out, string & hash_out);
+void NTFS_stream_save_info (wstring fname, FILETIME ft, string info);
 

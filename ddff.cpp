@@ -9,6 +9,7 @@
 #include <set>
 #include <map>
 #include <iostream>
+#include <fstream>
 #include <algorithm>
 #include <functional>
 
@@ -16,7 +17,6 @@
 
 #include <boost/utility.hpp>
 #include <boost/variant.hpp>
-#include <boost/foreach.hpp>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/adaptors.hpp>
 
@@ -33,37 +33,32 @@ FileSize be_sure_all_Nodes_have_same_size_and_return_it(const Node_group & n);
 wostream& operator<< (wostream &out, const Node &in);
 wostream& operator<< (wostream &out, const Node_group &in);
 
-typedef wstring Partial_hash;
-typedef wstring Full_hash;
-typedef wstring Dir_group_id;
+typedef string Partial_hash;
+typedef string Full_hash;
+typedef string Dir_group_id;
 
-//class Node : boost::noncopyable, public enable_shared_from_this<Node>
 class Node : boost::noncopyable
 {
     public:
         Partial_hash memoized_partial_hash; // hash level 2, (SHA512 of first and last 512 bytes) - may be empty
         Full_hash memoized_full_hash; // hash level 3, may be empty
-        bool generate_partial_hash();
-        bool generate_full_hash();
-
         Node* parent;
         wstring dir_name; // full path
         wstring file_name; // in case of files
         FileSize size; // always here
-        bool is_dir; // false - file, true - dir
-        bool size_unique;
-        bool partial_hash_unique;
-        bool full_hash_unique;
-        bool already_dumped;
+        bool is_dir:1; // false - file, true - dir
+        bool size_unique:1;
+        bool partial_hash_unique:1;
+        bool full_hash_unique:1;
+        bool already_dumped:1;
+        Node_group children; // (dir only)
+
+        bool generate_partial_hash();
+        bool generate_full_hash();
 
         Node::Node(Node* parent, wstring dir_name, wstring file_name, bool is_dir)
         {
-            if (dir_name[dir_name.size()-1]!='\\')
-            {
-                wcout << WFUNCTION << " dir_name=" << dir_name << " file_name=" << file_name << " is_dir=" << is_dir << endl;
-                assert(0);
-            };
-
+            assert (dir_name[dir_name.size()-1]=='\\');
             this->parent=parent;
             this->dir_name=dir_name;
             this->file_name=file_name;
@@ -71,9 +66,6 @@ class Node : boost::noncopyable
             size=0; // yet
             size_unique=partial_hash_unique=full_hash_unique=false;
             already_dumped=false;
-        };
-        ~Node()
-        {
         };
 
         wstring get_name() const
@@ -84,7 +76,6 @@ class Node : boost::noncopyable
                 return dir_name + file_name;
         };
 
-        Node_group children; // (dir only)
         bool collect_info();
         FileSize get_size() const { return size; };
 
@@ -134,7 +125,7 @@ class Node : boost::noncopyable
 
         // partial hashing occuring here
         // adding only nodes having size_unique=false, key of 'out' is partial hash
-        void add_children_for_stage2 (map<Partial_hash, list<Node*>> & out)
+        void add_children_for_stage2 (map<Partial_hash, Node_group> & out)
         {
             if (!size_unique && parent!=NULL)
             {
@@ -142,7 +133,7 @@ class Node : boost::noncopyable
                 if (get_partial_hash(s))
                 {
                     //wcout << WFUNCTION L"(): pushing info about " << get_name() << endl;
-                    out[s].push_back(this);
+                    out[s].insert(this);
                 }
                 else
                 {
@@ -201,23 +192,28 @@ class Node : boost::noncopyable
         };
 };
 
+struct is_Node_group_have_size_1
+{
+    bool operator()( Node_group n ) const { return n.size()==1; }
+};
+
+struct is_Node_group_dont_have_size_1
+{
+    bool operator()( Node_group n ) const { return n.size()!=1; }
+};
+
 map<FileSize, set<Node_group>> _add_all_nonunique_full_hashed_children (Node* root)
 {
     map<FileSize, set<Node_group>> rt;
 
     map<Full_hash, Node_group> tmp;
     root->add_all_nonunique_full_hashed_children (tmp);
-    BOOST_FOREACH(auto &i, tmp | map_values)
+
+    // do not add 1-sized node groups. these "orphaned" nodes may be here after fuzzy directory comparisons
+    for(auto &node_group : tmp | map_values | filtered(is_Node_group_dont_have_size_1()))
     {
-        if (i.size()==1)
-        {
-            // do not report. this "orphaned" nodes may be here after fuzzy directory comparisons
-        }
-        else
-        {
-            FileSize common_size=be_sure_all_Nodes_have_same_size_and_return_it (i);
-            rt[common_size].insert (i);
-        };
+        FileSize common_size=be_sure_all_Nodes_have_same_size_and_return_it (node_group);
+        rt[common_size].insert (node_group);
     };
     return rt;
 };
@@ -226,8 +222,7 @@ FileSize be_sure_all_Nodes_have_same_size_and_return_it(const Node_group & n)
 {
     assert (n.size()>0);
     FileSize rt=(*n.begin())->size;
-    for (auto &i : n)
-        if (i->size!=rt)
+    if (any_of(n.cbegin(), n.cend(), [&](Node* n){ return n->size!=rt; }))
         {
             wcout << WFUNCTION << " check failed. all nodes:" << endl;
             wcout << n;
@@ -250,12 +245,12 @@ wostream& operator<< (wostream &out, const Node &in)
 
     if (in.is_partial_hash_present())
     {
-        out << " memoized_partial_hash=" << in.memoized_partial_hash;
+        out << " memoized_partial_hash=" << in.memoized_partial_hash.c_str();
     };
 
     if (in.is_full_hash_present())
     {
-        out << " memoized_full_hash=" << in.memoized_full_hash;
+        out << " memoized_full_hash=" << in.memoized_full_hash.c_str();
     };
     
     out << endl;
@@ -265,10 +260,11 @@ wostream& operator<< (wostream &out, const Node &in)
 
 bool Node::generate_partial_hash()
 {
+    if (memoized_partial_hash.size()>0)
+        return true;
+
     if (is_dir)
     {
-        struct sha512_ctx ctx;
-        sha512_init_ctx (&ctx);
         multiset<Partial_hash> hashes;
 
         for (auto &i : children)
@@ -308,10 +304,11 @@ bool Node::generate_partial_hash()
 
 bool Node::generate_full_hash()
 {
+    if (memoized_full_hash.size()>0)
+        return true;
+
     if (is_dir)
     {
-        struct sha512_ctx ctx;
-        sha512_init_ctx (&ctx);
         multiset<Full_hash> hashes;
 
         for (auto &i : children)
@@ -342,7 +339,6 @@ bool Node::generate_full_hash()
     };
     return true;
 };
-
 
 bool Node::collect_info()
 {
@@ -406,44 +402,40 @@ bool Node::collect_info()
     };
 };
     
-FileSize set_of_Nodes_sum_size(const Node_group & s)
+FileSize set_of_Nodes_sum_size(const Node_group & group)
 {
     FileSize rt=0;
 
-    for (auto &i : s)
-        rt+=i->size;
+    for (auto &node : group)
+        rt+=node->size;
     return rt;
 };
 
 void mark_nodes_having_unique_sizes (Node* root)
 {
-    //wcout << WFUNCTION << endl;
     map<FileSize, Node_group> stage1; // key is file size
-
     root->add_all_children (stage1);
 
     //wcout << L"stage1.size()=" << stage1.size() << endl;
 
-    BOOST_FOREACH(auto &i, stage1 | map_values)
-        if (i.size()==1)
-        {
-            (*i.begin())->size_unique=true;
-            //wcout << WFUNCTION << L"() marking as unique: [" << to_mark->get_name() << L"] (unique size " << to_mark->size << L")" << endl;
-        };
+    for(auto &i : stage1 | map_values | filtered(is_Node_group_have_size_1()))
+    {
+        (*i.begin())->size_unique=true;
+        //wcout << WFUNCTION << L"() marking as unique: [" << to_mark->get_name() << L"] (unique size " << to_mark->size << L")" << endl;
+    };
 };
 
 void mark_nodes_having_unique_partial_hashes (Node* root)
 {
-    map<Partial_hash, list<Node*>> stage2; // key is partial hash
+    map<Partial_hash, Node_group> stage2; // key is partial hash
     root->add_children_for_stage2 (stage2);
     //wcout << L"stage2.size()=" << stage2.size() << endl;
 
-    BOOST_FOREACH(auto &i, stage2 | map_values)
-        if (i.size()==1)
-        {
-            (*i.begin())->partial_hash_unique=true;
-            //wcout << WFUNCTION << L"() marking as unique (because partial hash is unique): [" << to_mark->get_name() << L"]" << endl;
-        };
+    for(auto &node_group : stage2 | map_values | filtered(is_Node_group_have_size_1()))
+    {
+        (*node_group.begin())->partial_hash_unique=true;
+        //wcout << WFUNCTION << L"() marking as unique (because partial hash is unique): [" << to_mark->get_name() << L"]" << endl;
+    };
 };
 
 void mark_nodes_with_unique_full_hashes (Node* root)
@@ -452,21 +444,20 @@ void mark_nodes_with_unique_full_hashes (Node* root)
     root->add_children_for_stage3 (stage3);
     //wcout << L"stage3.size()=" << stage3.size() << endl;
 
-    BOOST_FOREACH(auto &i, stage3 | map_values)
-        if (i.size()==1)
-        {
-            (*i.begin())->full_hash_unique=true;
-            //wcout << WFUNCTION << L"() marking as unique: [" << to_mark->get_name() << "] (because full hash is unique)" << endl;
-        };
+    for (auto &node_group : stage3 | map_values | filtered(is_Node_group_have_size_1()))
+    {
+        (*node_group.begin())->full_hash_unique=true;
+        //wcout << WFUNCTION << L"() marking as unique: [" << to_mark->get_name() << "] (because full hash is unique)" << endl;
+    };
 };
 
 void cut_children_for_non_unique_dirs (Node* root)
 {
     map<Full_hash, Node_group> stage3; // key is full hash
     root->add_children_for_stage3 (stage3);
-    BOOST_FOREACH(auto &node_group, stage3 | map_values)
+    for(auto &node_group : stage3 | map_values | filtered(is_Node_group_have_size_1()))
     {
-        if (node_group.size()>1 && (*node_group.begin())->is_dir)
+        if ((*node_group.begin())->is_dir)
         {
             // * cut unneeded (directory type) nodes for keys with more than only 1 value 
             // (e.g. nodes to be dumped)
@@ -556,15 +547,9 @@ class Result
         void dump(wostream & out)
         {
             if (result.which()==0)
-            {
-                Result_fuzzy_equal_dirs* tmp=boost::get<Result_fuzzy_equal_dirs*>(result);
-                tmp->dump(out);
-            }
+                boost::get<Result_fuzzy_equal_dirs*>(result)->dump(out);
             else if (result.which()==1)
-            {
-                Result_equal_files_dirs* tmp=boost::get<Result_equal_files_dirs*>(result);
-                tmp->dump(out);
-            }
+                boost::get<Result_equal_files_dirs*>(result)->dump(out);
             else
             {
                 assert (0);
@@ -577,12 +562,11 @@ void work_on_fuzzy_equal_dirs (Node *root, map<FileSize, set<Result*>> & results
     map<Full_hash, Node_group> groups_of_similar_files;
     root->add_all_nonunique_full_hashed_children_only_files (groups_of_similar_files);
 
-    // key is dir_group, value is set of Nodes for corresponding files
     map<Dir_group_id, set<wstring>> dir_groups_files, dir_groups_names;
     map<Dir_group_id, FileSize> group_size;
     map<Dir_group_id, Node_group> dir_groups_links;
 
-    BOOST_FOREACH(auto &node_group, groups_of_similar_files | map_values)
+    for (auto &node_group : groups_of_similar_files | map_values)
     {
         set<wstring> directories, files;
         Node_group links;
@@ -598,15 +582,15 @@ void work_on_fuzzy_equal_dirs (Node *root, map<FileSize, set<Result*>> & results
         if (directories.size()==1) // this mean, some similar files withine ONE directory, do not report
             continue;
 
-        wstring dir_group=SHA512_process (directories);
+        Dir_group_id dir_group=SHA512_process (directories);
         dir_groups_files[dir_group].insert (files.begin(), files.end());
         
         //wcout << WFUNCTION << " inserting these files to dir_groups_files:" << endl;
         //output_set_wstring_as_multiline (wcout, files);
 
         dir_groups_names[dir_group].insert (directories.begin(), directories.end());
-        group_size[dir_group]=group_size[dir_group] + set_of_Nodes_sum_size(node_group);
         dir_groups_links[dir_group].insert (links.begin(), links.end());
+        group_size[dir_group]+=set_of_Nodes_sum_size(node_group);
     };
     
     for (auto &group : dir_groups_files)
@@ -628,21 +612,16 @@ void work_on_fuzzy_equal_dirs (Node *root, map<FileSize, set<Result*>> & results
 
 void add_exact_results (map<FileSize, set<Node_group>> & stage4, map<FileSize, set<Result*>> & results) 
 {
-    BOOST_FOREACH(auto &node_groups, stage4 | map_values)
-    {
+    for (auto &node_groups : stage4 | map_values)
         for (auto &node_group : node_groups)
         {
             Node* first_node=*(node_group.begin());
-            //if (first_node->already_dumped)
-            //    continue;
 
             set<wstring> full_dirfilenames;
 
             for (auto &node : node_group)
-            {
                 if (node->already_dumped==false)
                     full_dirfilenames.insert(node->get_name());
-            };
 
             if (full_dirfilenames.size()>1)
             {
@@ -651,7 +630,6 @@ void add_exact_results (map<FileSize, set<Node_group>> & stage4, map<FileSize, s
                 results[first_node->size].insert (new Result(new Result_equal_files_dirs (first_node->is_dir, first_node->size, full_dirfilenames)));
             };
         };
-    };
 };
 
 void do_all(set<wstring> dirs)
@@ -690,7 +668,7 @@ void do_all(set<wstring> dirs)
     wcout << "* results:" << endl;
 
     // dump results
-    BOOST_FOREACH(auto &result_group, results | map_values | reversed)
+    for (auto &result_group : results | map_values | reversed)
         for (auto &result : result_group)
             result->dump(wcout);
 
@@ -709,8 +687,8 @@ void tests()
         wstring out1;
         FileSize out4;
 
-        assert (SHA512_of_file (L"tst.mp3", out1)==true);
-        assert (out1==L"3007efc65d0eb370731d770b222e4b7c89f02435085f0bc4ad20c0356fadf562227dffb80d3e1a7a38ef1acad3883504a80ae2f8e36471d87a3e8dfb7c2114c1");
+        //assert (SHA512_of_file (L"tst.mp3", out1)==true);
+        //assert (out1==L"3007efc65d0eb370731d770b222e4b7c89f02435085f0bc4ad20c0356fadf562227dffb80d3e1a7a38ef1acad3883504a80ae2f8e36471d87a3e8dfb7c2114c1");
 
         get_file_size (L"10GB_empty_file", out4);
         assert (out4==10737418240);
@@ -755,9 +733,9 @@ int wmain(int argc, wchar_t** argv)
     {
         cerr << "bad_alloc caught: " << ba.what() << endl;
     }
-    catch (std::exception &s)
+    catch (exception &s)
     {
-        wcout << "std::exception: " << s.what() << endl;
+        wcout << "exception: " << s.what() << endl;
     };
 
     return 0;

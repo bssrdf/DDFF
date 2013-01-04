@@ -8,6 +8,7 @@
 #include <iostream>
 #include <string>
 #include <sstream>
+#include <fstream>
 #include <set>
 
 #include "utils.hpp"
@@ -116,12 +117,12 @@ wstring get_current_dir ()
     return rt;
 };
 
-wstring SHA512_finish_and_get_result (struct sha512_ctx *ctx)
+string SHA512_finish_and_get_result (struct sha512_ctx *ctx)
 {
     uint8_t res[64];
     sha512_finish_ctx (ctx, res);
 
-    wostringstream s;
+    ostringstream s;
 
     s << hex; // these are 'sticky' flags
     s.fill('0');
@@ -129,14 +130,15 @@ wstring SHA512_finish_and_get_result (struct sha512_ctx *ctx)
     for (int i=0; i<64; i++)
     {
         s.width (2); // this flag is not 'sticky'
-        s << res[i];
-    };
+        s << (int) res[i];
+   };
 
-    assert (s.str().size()==128);
-    return s.str();
+    string rt=s.str();
+    assert (rt.size()==128);
+    return rt;
 };
 
-bool NTFS_stream_get_info_if_exist (wstring fname, FILETIME & ft_out, wstring & hash_out)
+bool NTFS_stream_get_info_if_exist (wstring fname, FILETIME & ft_out, string & hash_out)
 {
     HANDLE h=CreateFile(fname.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 
@@ -146,37 +148,43 @@ bool NTFS_stream_get_info_if_exist (wstring fname, FILETIME & ft_out, wstring & 
         return false; // throw exception?
     };
 
-    wchar_t buf[1024];
+    char buf[1024];
     memset (buf, 0, 1024);
     DWORD actually_read;
-    if (ReadFile (h, buf, 1024*sizeof(wchar_t), &actually_read, NULL)==FALSE)
+    if (ReadFile (h, buf, 1024, &actually_read, NULL)==FALSE)
     {
         //wprintf (L"NTFS_streams_get_info_if_exist() can't read file %s\n", fname.c_str());
         return false; // throw exception?
     };
 
-    wchar_t buf2[1024];
+    istringstream s;
+    s.exceptions (ifstream::failbit | ifstream::badbit);
+    s.str (buf);
 
-    //wprintf (L"going to scan %s\n", buf);
-    int scanf_res=swscanf (buf, L"%08X,%08X,%s\n", &ft_out.dwHighDateTime, &ft_out.dwLowDateTime, &buf2);
-    if (scanf_res!=3)
+    try
     {
-        wprintf (L"%s() something wrong I got from stream: [%s]\n", WFUNCTION, buf);
-        wprintf (L"scanf_res=%d\n", scanf_res);
-        //wprintf (L"ft_out.dwHighDateTime=%08X\n", ft_out.dwHighDateTime);
-        //wprintf (L"ft_out.dwLowDateTime=%08X\n", ft_out.dwLowDateTime);
-        //wprintf (L"buf2=%s\n", buf2);
+        s >> ft_out.dwLowDateTime >> ft_out.dwHighDateTime >> hash_out;
+    }
+    catch (ifstream::failure & e)
+    {
+        wcout << WFUNCTION << " sname=" << fname << " buf=[" << buf << "]" << endl;
+        wcout << "Exception while reading: " << e.what() << endl;
+        CloseHandle (h);
+        return false;
     };
 
-    hash_out=wstring (buf2);
+    //wcout << "ft_out.dwLowDateTime=" << ft_out.dwLowDateTime << endl;
+    //wcout << "ft_out.dwHighDateTime=" << ft_out.dwHighDateTime << endl;
+    //wcout << "hash_out=" << hash_out.c_str() << endl;
+    //exit(0);
 
     CloseHandle (h);
     return true;
 };
 
-void NTFS_stream_save_info (wstring sname, wstring info) // or, overwrite
+void NTFS_stream_save_info (wstring sname, FILETIME ft, string hash) // or, overwrite
 {
-    FILETIME LastWriteTime;
+    //wcout << WFUNCTION << L"() sname= " << sname << endl;
 
     HANDLE h=CreateFile(sname.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 
@@ -187,17 +195,21 @@ void NTFS_stream_save_info (wstring sname, wstring info) // or, overwrite
         return; // do nothing - yet!
     };
 
+    FILETIME LastWriteTime;
     if (GetFileTime (h, NULL, NULL, &LastWriteTime)==FALSE)
     {
         wcout << WFUNCTION << L"(): GetFileTime failed for stream " << sname << endl;
         return; // do nothing
     };
-    
+
+    ostringstream s;
+    s << ft.dwLowDateTime << " " << ft.dwHighDateTime << " " << hash;
     DWORD actually_written;
-    if (WriteFile (h, info.c_str(), info.size()*sizeof(wchar_t), &actually_written, NULL)==FALSE)
+    string str_to_be_written=s.str();
+    if (WriteFile (h, str_to_be_written.c_str(), str_to_be_written.size(), &actually_written, NULL)==FALSE)
     {
-        //wcout << WFUNCTION L"() can't write to file/NTFS stream " << sname << endl;
-        assert (0); // throw exception?
+        wcout << WFUNCTION L"() can't write to file/NTFS stream " << sname << endl;
+        return; // throw exception?
     };
 
     CloseHandle (h);
@@ -223,8 +235,14 @@ void NTFS_stream_save_info (wstring sname, wstring info) // or, overwrite
 
 #define FULL_HASH_BUFSIZE 1024000
 
-bool SHA512_of_file (wstring fname, wstring & rt)
+bool SHA512_of_file (wstring fname, string & rt)
 {
+    wstring stream_fname;
+    if (fname.size()==1)
+        stream_fname=L".\\"+fname;
+    else
+        stream_fname=fname;
+
     HANDLE h=CreateFile(fname.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 
     if (h==INVALID_HANDLE_VALUE)
@@ -242,7 +260,8 @@ bool SHA512_of_file (wstring fname, wstring & rt)
     };
 
     FILETIME ft_from_stream;
-    bool b=NTFS_stream_get_info_if_exist (fname+L":DDF_FULL_SHA512", ft_from_stream, rt);
+    bool b;
+    b=NTFS_stream_get_info_if_exist (stream_fname+L":DDF_FULL_SHA512", ft_from_stream, rt);
     if (b)
     {
         //wprintf (L"%s(): Got full SHA512 from %s file\n", WFUNCTION, fname.c_str());
@@ -271,7 +290,7 @@ bool SHA512_of_file (wstring fname, wstring & rt)
     {
         if (ReadFile (h, buf, FULL_HASH_BUFSIZE, &actually_read, NULL)==FALSE)
         {
-            wprintf (L"%s() can't read file %s\n", WFUNCTION, fname.c_str());
+            wcout << WFUNCTION << L"() can't read file " << fname << endl;
             free (buf);
             return false; // throw exception?
         };
@@ -283,20 +302,26 @@ bool SHA512_of_file (wstring fname, wstring & rt)
 
     free (buf);
     rt=SHA512_finish_and_get_result (&ctx);
-    NTFS_stream_save_info (fname+L":DDF_FULL_SHA512", wstrfmt (L"%08X,%08X,%s", LastWriteTime.dwHighDateTime, LastWriteTime.dwLowDateTime, rt.c_str()));
+    NTFS_stream_save_info (stream_fname+L":DDF_FULL_SHA512", LastWriteTime, rt);
     return true;
 };
 
 void sha512_test()
 {
     struct sha512_ctx ctx;
-    wstring result;
+    string result;
     char *s1="The quick brown fox jumps over the lazy dog";
 
     sha512_init_ctx (&ctx);
     sha512_process_bytes (s1, strlen(s1), &ctx);
     result=SHA512_finish_and_get_result (&ctx);
-    assert (result==wstring(L"07e547d9586f6a73f73fbac0435ed76951218fb7d0c8d788a309d785436bbb642e93a252a954f23912547d1e8a3b5ed6e1bfd7097821233fa0538f3db854fee6"));
+    assert (result==string("07e547d9586f6a73f73fbac0435ed76951218fb7d0c8d788a309d785436bbb642e93a252a954f23912547d1e8a3b5ed6e1bfd7097821233fa0538f3db854fee6"));
+};
+
+void SHA512_process_string (struct sha512_ctx *ctx, string s)
+{
+    const char* tmp=s.c_str();
+    sha512_process_bytes (tmp, s.size(), ctx);
 };
 
 void SHA512_process_wstring (struct sha512_ctx *ctx, wstring s)
@@ -307,8 +332,14 @@ void SHA512_process_wstring (struct sha512_ctx *ctx, wstring s)
 
 #define PARTIAL_HASH_BUFSIZE 512
 
-bool partial_SHA512_of_file (wstring fname, wstring & out)
+bool partial_SHA512_of_file (wstring fname, string & out)
 {
+    wstring stream_fname;
+    if (fname.size()==1)
+        stream_fname=L".\\"+fname;
+    else
+        stream_fname=fname;
+    //wcout << WFUNCTION << "() fname=" << fname << endl;
     HANDLE h=CreateFile(fname.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 
     if (h==INVALID_HANDLE_VALUE)
@@ -326,7 +357,8 @@ bool partial_SHA512_of_file (wstring fname, wstring & out)
     };
 
     FILETIME ft_from_stream;
-    bool b=NTFS_stream_get_info_if_exist (fname+L":DDF_PART_SHA512", ft_from_stream, out);
+    bool b;
+    b=NTFS_stream_get_info_if_exist (stream_fname+L":DDF_PART_SHA512", ft_from_stream, out);
     if (b)
     {
         //wprintf (L"%s(): Got partial SHA512 from %s file\n", WFUNCTION, fname.c_str());
@@ -393,7 +425,7 @@ bool partial_SHA512_of_file (wstring fname, wstring & out)
     CloseHandle (h);
 
     out=SHA512_finish_and_get_result (&ctx);
-    NTFS_stream_save_info (fname+L":DDF_PART_SHA512", wstrfmt (L"%08X,%08X,%s", LastWriteTime.dwHighDateTime, LastWriteTime.dwLowDateTime, out.c_str()));
+    NTFS_stream_save_info (stream_fname+L":DDF_PART_SHA512", LastWriteTime, out);
     return true;
 };
 
@@ -410,8 +442,15 @@ wstring size_to_string (FileSize i)
 
 bool set_current_dir(wstring dir)
 {
+    //wcout << L"setting cur dir to " << dir << endl;
     BOOL B=SetCurrentDirectory (dir.c_str());
     return B==TRUE;
+};
+
+void SHA512_process (struct sha512_ctx *ctx, set<string> s)
+{
+    for (string st : s)
+        SHA512_process_string (ctx, st);
 };
 
 void SHA512_process (struct sha512_ctx *ctx, set<wstring> s)
@@ -420,16 +459,24 @@ void SHA512_process (struct sha512_ctx *ctx, set<wstring> s)
         SHA512_process_wstring (ctx, st);
 };
 
-wstring SHA512_process (multiset<wstring> s)
+string SHA512_process (multiset<string> s)
 {
     struct sha512_ctx ctx;
     sha512_init_ctx (&ctx);      
-    for (wstring st : s)
-        SHA512_process_wstring (&ctx, st);
+    for (string st : s)
+        SHA512_process_string (&ctx, st);
     return SHA512_finish_and_get_result (&ctx);
 };
 
-wstring SHA512_process (set<wstring> s)
+string SHA512_process (set<string> s)
+{
+    struct sha512_ctx ctx;
+    sha512_init_ctx (&ctx);      
+    SHA512_process (&ctx, s);
+    return SHA512_finish_and_get_result (&ctx);
+}
+
+string SHA512_process (set<wstring> s)
 {
     struct sha512_ctx ctx;
     sha512_init_ctx (&ctx);      
