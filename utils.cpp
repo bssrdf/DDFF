@@ -89,7 +89,7 @@ bool get_file_size (wstring name, FileSize & out)
 
     if (lo==INVALID_FILE_SIZE && last_err!=NO_ERROR)
     {
-        wcout << WFUNCTION L"(): lo=INVALID_FILE_SIZE, last_err=0x" << hex << last_err << " " << GetLastError_to_message (last_err) << endl;
+        wcerr << WFUNCTION L"(): lo=INVALID_FILE_SIZE, last_err=0x" << hex << last_err << " " << GetLastError_to_message (last_err) << endl;
         rt=false;
     }
     else
@@ -168,8 +168,8 @@ bool NTFS_stream_get_info_if_exist (wstring fname, FILETIME & ft_out, string & h
     }
     catch (ifstream::failure & e)
     {
-        wcout << WFUNCTION << " sname=" << fname << " buf=[" << buf << "]" << endl;
-        wcout << "Exception while reading: " << e.what() << endl;
+        wcerr << WFUNCTION << " sname=" << fname << " buf=[" << buf << "]" << endl;
+        wcerr << "Exception while reading: " << e.what() << endl;
         CloseHandle (h);
         return false;
     };
@@ -185,8 +185,6 @@ bool NTFS_stream_get_info_if_exist (wstring fname, FILETIME & ft_out, string & h
 
 void NTFS_stream_save_info (wstring sname, FILETIME ft, string hash) // or, overwrite
 {
-    //wcout << WFUNCTION << L"() sname= " << sname << endl;
-
     HANDLE h=CreateFile(sname.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 
     if (h==INVALID_HANDLE_VALUE)
@@ -199,7 +197,7 @@ void NTFS_stream_save_info (wstring sname, FILETIME ft, string hash) // or, over
     FILETIME LastWriteTime;
     if (GetFileTime (h, NULL, NULL, &LastWriteTime)==FALSE)
     {
-        wcout << WFUNCTION << L"(): GetFileTime failed for stream " << sname << endl;
+        wcerr << WFUNCTION << L"(): GetFileTime failed for stream " << sname << endl;
         return; // do nothing
     };
 
@@ -209,7 +207,7 @@ void NTFS_stream_save_info (wstring sname, FILETIME ft, string hash) // or, over
     string str_to_be_written=s.str();
     if (WriteFile (h, str_to_be_written.c_str(), str_to_be_written.size(), &actually_written, NULL)==FALSE)
     {
-        wcout << WFUNCTION L"() can't write to file/NTFS stream " << sname << endl;
+        wcerr << WFUNCTION L"() can't write to file/NTFS stream " << sname << endl;
         return; // throw exception?
     };
 
@@ -219,14 +217,14 @@ void NTFS_stream_save_info (wstring sname, FILETIME ft, string hash) // or, over
 
     if (h==INVALID_HANDLE_VALUE)
     {
-        wcout << WFUNCTION << L"() can't open file/NTFS stream " << sname << endl;
+        wcerr << WFUNCTION << L"() can't open file/NTFS stream " << sname << endl;
         //assert (0); // throw exception?
         return; // do nothing - yet!
     };
 
     if (SetFileTime (h, NULL, NULL, &LastWriteTime)==FALSE)
     {
-        wcout << WFUNCTION << L"(): SetFileTime failed";
+        wcerr << WFUNCTION << L"(): SetFileTime failed";
         return; // do nothing
     };
 
@@ -249,7 +247,7 @@ bool SHA512_of_file (wstring fname, string & rt)
     if (h==INVALID_HANDLE_VALUE)
     {
         DWORD err=GetLastError();
-        wcout << WFUNCTION << L"() can't open file " << fname << " GetLastError [" <<GetLastError_to_message (err)<< "]" << endl;
+        wcerr << WFUNCTION << L"() can't open file " << fname << " GetLastError [" <<GetLastError_to_message (err)<< "]" << endl;
         return false; // throw exception?
     };
 
@@ -291,7 +289,7 @@ bool SHA512_of_file (wstring fname, string & rt)
     {
         if (ReadFile (h, buf, FULL_HASH_BUFSIZE, &actually_read, NULL)==FALSE)
         {
-            wcout << WFUNCTION << L"() can't read file " << fname << endl;
+            wcerr << WFUNCTION << L"() can't read file " << fname << endl;
             free (buf);
             return false; // throw exception?
         };
@@ -340,13 +338,13 @@ bool partial_SHA512_of_file (wstring fname, string & out)
         stream_fname=L".\\"+fname;
     else
         stream_fname=fname;
-    //wcout << WFUNCTION << "() fname=" << fname << endl;
+    
     HANDLE h=CreateFile(fname.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 
     if (h==INVALID_HANDLE_VALUE)
     {
         DWORD err=GetLastError();
-        wcout << WFUNCTION << L"() can't open file " << fname.c_str() << " " << GetLastError_to_message (err) << endl;
+        wcerr << WFUNCTION << L"() can't open file " << fname.c_str() << " " << GetLastError_to_message (err) << endl;
         return false; // throw exception?
     };
 
@@ -413,7 +411,7 @@ bool partial_SHA512_of_file (wstring fname, string & out)
         if (SetFilePointer (h, -512, &tmp, FILE_END)==INVALID_SET_FILE_POINTER && GetLastError()!=NO_ERROR)
         {
             DWORD err=GetLastError();
-            wcout << WFUNCTION L"() SetFilePointer failed for " << fname << " (" << GetLastError_to_message (err) << ")" << endl;
+            wcerr << WFUNCTION L"() SetFilePointer failed for " << fname << " (" << GetLastError_to_message (err) << ")" << endl;
             return false;
         };
 
@@ -445,8 +443,13 @@ wstring size_to_string (FileSize i)
 
 bool set_current_dir(wstring dir)
 {
-    //wcout << L"setting cur dir to " << dir << endl;
     BOOL B=SetCurrentDirectory (dir.c_str());
+    if (B==FALSE)
+    {
+        DWORD err=GetLastError();
+        wcerr << L"cannot change directory to [" << dir << L"]" << endl;
+        wcerr << err << L" " << GetLastError_to_message (err) << endl;
+    };
     return B==TRUE;
 };
 
