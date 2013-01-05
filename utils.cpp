@@ -249,7 +249,7 @@ bool SHA512_of_file (wstring fname, string & rt)
     if (h==INVALID_HANDLE_VALUE)
     {
         DWORD err=GetLastError();
-        wprintf (L"%s() can't open file %s. GetLastError=0x%08X (%s)\n", WFUNCTION, fname.c_str(), err, GetLastError_to_message (err).c_str());
+        wcout << WFUNCTION << L"() can't open file " << fname << " GetLastError [" <<GetLastError_to_message (err)<< "]" << endl;
         return false; // throw exception?
     };
 
@@ -409,9 +409,11 @@ bool partial_SHA512_of_file (wstring fname, string & out)
         };
         sha512_process_bytes (buf, actually_read, &ctx);
 
-        if (SetFilePointer (h, -512, 0, FILE_END)==INVALID_SET_FILE_POINTER && GetLastError()!=NO_ERROR)
+        LONG tmp=0;
+        if (SetFilePointer (h, -512, &tmp, FILE_END)==INVALID_SET_FILE_POINTER && GetLastError()!=NO_ERROR)
         {
-            wprintf (L"%s() SetFilePointer failed for %s\n", WFUNCTION, fname.c_str());
+            DWORD err=GetLastError();
+            wcout << WFUNCTION L"() SetFilePointer failed for " << fname << " (" << GetLastError_to_message (err) << ")" << endl;
             return false;
         };
 
