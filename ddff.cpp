@@ -9,6 +9,7 @@
 #include <set>
 #include <map>
 #include <iostream>
+#include <locale>
 #include <fstream>
 #include <algorithm>
 #include <functional>
@@ -652,7 +653,6 @@ void do_all(set<wstring> dirs)
     
     wofstream fout;
     fout.open ("ddff_results.txt", ios::out);
-    //fout.imbue(locale(utf8_locale));
 
     fout << "* results:" << endl;
 
@@ -696,6 +696,7 @@ int wmain(int argc, wchar_t** argv)
 {
     _setmode(_fileno(stdout), _O_U16TEXT);
     _setmode(_fileno(stderr), _O_U16TEXT);
+    locale::global(locale(""));
 
     //tests();
     set<wstring> dirs;
