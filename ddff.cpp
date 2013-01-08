@@ -1,3 +1,5 @@
+#define BOOST_LIB_DIAGNOSTIC
+
 #include <stdio.h>
 #include <assert.h>
 #include <io.h>
@@ -207,6 +209,12 @@ struct is_Node_group_dont_have_size_1
     bool operator()( Node_group n ) const { return n.size()!=1; }
 };
 
+FileSize set_of_Nodes_sum_size(const Node_group & group);
+struct is_Node_group_size_not_zero
+{
+    bool operator()( Node_group n ) const { return set_of_Nodes_sum_size(n)!=0; }
+};
+
 struct is_Node_group_type_dir
 {
     bool operator()( Node_group n ) const 
@@ -215,7 +223,12 @@ struct is_Node_group_type_dir
         // just to be sure
         for (auto &node : n)
         {
-            assert (rt_is_dir == node->is_dir);
+            if (rt_is_dir != node->is_dir)
+            {
+                wcout << WFUNCTION << L"() not all nodes in Node_group has same is_dir" << endl;
+                wcout << n;
+                exit(0);
+            };
         };
         return rt_is_dir; 
     }
@@ -449,7 +462,9 @@ void cut_children_for_non_unique_dirs (Node* root)
     root->add_children_for_stage3 (stage3);
 
     for(auto &node_group : stage3 | map_values | 
-            filtered(is_Node_group_have_size_1()) | filtered(is_Node_group_type_dir()))
+            filtered(is_Node_group_dont_have_size_1()) | 
+            filtered(is_Node_group_size_not_zero()) | // should be evaluated before next filtered()
+            filtered(is_Node_group_type_dir()))
     {
         // * cut unneeded (directory type) nodes for keys with more than only 1 value 
         // (e.g. nodes to be dumped)
@@ -614,8 +629,18 @@ void add_exact_results (map<FileSize, set<Node_group>> & stage4, map<FileSize, s
         };
 };
 
+#include <boost/filesystem.hpp>
+#include <boost/serialization/serialization.hpp>
+
+#include <boost/archive/add_facet.hpp>
+#include <boost/archive/detail/utf8_codecvt_facet.hpp>
+
 void do_all(set<wstring> dirs)
 {
+    locale old_loc;
+    locale* utf8_locale = boost::archive::add_facet(
+            old_loc, new boost::archive::detail::utf8_codecvt_facet);
+   
     wstring dir_at_start=get_current_dir();
     Node* root=new Node(NULL, L"\\", L"", true);
  
@@ -653,6 +678,7 @@ void do_all(set<wstring> dirs)
     
     wofstream fout;
     fout.open ("ddff_results.txt", ios::out);
+    fout.imbue(*utf8_locale);
 
     fout << "* results:" << endl;
 

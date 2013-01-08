@@ -1,4 +1,4 @@
-LIBS=kernel32.lib user32.lib
+LIBS=kernel32.lib user32.lib libboost_wserialization-vc110-mt-s-1_52.lib
 BOOST_LIBS=$(BOOST)stage/lib
 CL_OPTIONS=/Fo$@ /EHsc /DUNICODE /c /Ox /Zi /I$(BOOST)
 LINK_OPTIONS=/OUT:$@ $(LIBS) /LIBPATH:$(BOOST_LIBS)
