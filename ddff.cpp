@@ -482,9 +482,11 @@ wostream& operator<< (wostream &out, const Node_group &in)
     return out;
 };
 
-void output_set_wstring_as_multiline (wostream &out, const set<wstring> &in)
+wstring set_to_string (const set<wstring> & in, wstring sep)
 {
-    std::copy(in.begin(), in.end(), std::ostream_iterator<wstring, wchar_t>(out, L"\n"));
+    wstring rt;
+    for_each (in.begin(), in.end(), [&](wstring s) { rt=rt+s+sep; });
+    return rt;
 };
 
 class Result_fuzzy_equal_dirs
@@ -504,9 +506,9 @@ class Result_fuzzy_equal_dirs
         {
             out << L"* common files in directories (" << size_to_string(size) << L")" << endl;
             out << L"** directories:" << endl;
-            output_set_wstring_as_multiline (out, directories);
+            out << set_to_string (directories, L"\n");
             out << L"** files:" << endl;
-            output_set_wstring_as_multiline (out, files);
+            out << set_to_string (files, L"\n");
             out << endl;           
         };
 };
@@ -528,7 +530,7 @@ class Result_equal_files_dirs
         {
             out << L"* equal " << (is_dir ? wstring(L"directories") : wstring (L"files"))
                 << L" (size " << size_to_string (size) << ")" << endl;
-            output_set_wstring_as_multiline (out, equal_files);
+            out << set_to_string (equal_files, L"\n");
             out << endl;
         };
 };
@@ -622,10 +624,8 @@ void add_exact_results (map<FileSize, set<Node_group>> & stage4, map<FileSize, s
                 if (node->already_dumped==false)
                     full_dirfilenames.insert(node->get_name());
 
-            if (full_dirfilenames.size()>1)
-            {
+            if (full_dirfilenames.size()>1 && first_node->size>0)
                 results[first_node->size].insert (new Result(new Result_equal_files_dirs (first_node->is_dir, first_node->size, full_dirfilenames)));
-            };
         };
 };
 
@@ -637,6 +637,7 @@ void add_exact_results (map<FileSize, set<Node_group>> & stage4, map<FileSize, s
 
 void do_all(set<wstring> dirs)
 {
+    const string result_filename="ddff_results.txt";
     locale old_loc;
     locale* utf8_locale = boost::archive::add_facet(
             old_loc, new boost::archive::detail::utf8_codecvt_facet);
@@ -644,10 +645,10 @@ void do_all(set<wstring> dirs)
     wstring dir_at_start=get_current_dir();
     Node* root=new Node(NULL, L"\\", L"", true);
  
-    wcout << "starting with these directories:" << endl;
-    output_set_wstring_as_multiline (wcout, dirs);
-    assert (wcout.bad()==false);
+    wcout << L"starting with these directories:" << endl;
+    wcout << set_to_string (dirs, L"\n");
 
+    wcout << L"(Stage 1/3) Scanning file tree" << endl;
     for (auto &dir : dirs)
     {
         Node* node=new Node(root, dir, L"", true);
@@ -658,37 +659,40 @@ void do_all(set<wstring> dirs)
     // stage 1: remove all (file) nodes having unique file sizes
     mark_nodes_having_unique_sizes (root);
 
+    wcout << L"(Stage 2/3) Computing partial filehashes" << endl;
+
     // stage 2: remove all file/directory nodes having unique partial hashes
     mark_nodes_having_unique_partial_hashes (root);
+
+    wcout << L"(Stage 3/3) Computing full filehashes" << endl;
 
     // stage 3: remove all file/directory nodes having unique full hashes
     mark_nodes_with_unique_full_hashes (root);
 
     cut_children_for_non_unique_dirs (root);
 
-    map<FileSize, set<Result*>> results; // automatically sorted map!
+    map<FileSize, set<Result*>> results; // implicitly sorted map!
 
     work_on_fuzzy_equal_dirs (root, results);
 
-    map<FileSize, set<Node_group>> stage4; // here will be size-sorted nodes. key is file/dir size
+    map<FileSize, set<Node_group>> stage4; // size-sorted nodes
     stage4=_add_all_nonunique_full_hashed_children (root);
     add_exact_results (stage4, results);
 
     set_current_dir (dir_at_start);
     
     wofstream fout;
-    fout.open ("ddff_results.txt", ios::out);
+    fout.open (result_filename, ios::out);
     fout.imbue(*utf8_locale);
 
     fout << "* results:" << endl;
 
     // dump results
     for (auto &result_group : results | map_values | reversed)
-        for (auto &result : result_group)
+        for (auto &result : result_group) 
             result->dump(fout);
 
-    fout.flush();
-    fout.close();
+    wcout << L"Results saved into " << result_filename.c_str() << " file" << endl; // FIXME .c_str()
 
     // we do not free any allocated memory
 };
@@ -727,8 +731,15 @@ int wmain(int argc, wchar_t** argv)
     //tests();
     set<wstring> dirs;
 
+    wcout << L"Duplicate Directories and Files Finder" << endl;
+    wcout << L"-- <dennis@yurichev.com> (" << WDATE << L")" << endl;
+
     if (argc==1)
-        dirs.insert (get_current_dir()); // ?
+    {
+       wcout << "Usage: ddff.exe <directory1> <directory2> ... " << endl;
+       wcout << "For example: ddff.exe C:\\ D:\\ E:\\" << endl;
+       return 0;
+    }
     else 
     {
         for (int i=0; i<(argc-1); i++)

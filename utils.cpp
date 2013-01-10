@@ -448,7 +448,7 @@ bool set_current_dir(wstring dir)
     {
         DWORD err=GetLastError();
         wcerr << L"cannot change directory to [" << dir << L"]" << endl;
-        wcerr << err << L" " << GetLastError_to_message (err) << endl;
+        wcerr << GetLastError_to_message (err) << endl;
     };
     return B==TRUE;
 };

@@ -3,6 +3,7 @@
 #define WIDEN2(x) L ## x
 #define WIDEN(x) WIDEN2(x)
 #define WFILE WIDEN(__FILE__)
+#define WDATE WIDEN(__DATE__)
 #define WFUNCTION WIDEN(__FUNCTION__)
 
 #include <wchar.h>
