@@ -1,0 +1,7 @@
+* MS Visual Studio 2012
+
+* Boost (at least 1.52) should be accessible via BOOST environment variable.
+
+* Compiling:
+
+nmake all

@@ -1,0 +1,50 @@
+Duplicate Directories and Files Finder
+<dennis@yurichev.com>
+
+* How to run it:
+
+Usage: ddff.exe <directory1> <directory2> ...
+For example: ddff.exe C:\ D:\ E:\
+
+Some information (partial and full filehashes) are stored into NTFS streams, so the next
+scanning will be much faster.
+
+* Comparison to other duplicate finding utilities:
+
++ Very fast
++ Comparing directories too.
++ Often, two directories contain, let's say, 4 equal files and 5th file is different.
+  We handle it too and output these as "common files in directories"
++ Absence of unnecessary switches.
+
+- Win32 only
+- Command-line only
+
+* How it works (tech info):
+
+** Stage 1
+
+Filetree scanned and all information about all files are added.
+We cut here all files having unique filesizes, because, they cannot be equal to any other file.
+
+** Stage 2
+
+Partial hashes (SHA512 of first and last 512 bytes) are computed for each file and directory.
+Partial hash of directory of files is just SHA512 of all filehashes.
+We cut here all files having unique partial hashes.
+
+** Stage 3
+
+Full hashes (SHA512 of the whole file) are computer for each file and directory.
+Full hash of directory of files is just SHA512 of all filehashes.
+We cut here all files having unique full hashes.
+
+** Preparation to dumping
+
+*** Cut children of all directories
+
+This mean, if directories A and B equal, but their subdirectories are equal to their counterparts
+too, we should supress this information and dump information only about A and B directories 
+equivalence.
+
+*** Work on fuzzy equal directories
