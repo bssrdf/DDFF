@@ -1,12 +1,3 @@
-﻿* выход в utf-8/utf-16
+﻿* progress bar output.
 
-* progress bar output!
-
-разгребать бардак тут! C:\Users\Administrator\-cracker's things\
-и в музыке! у меня ж там капец много всяких дупов!
-
-идея названия: duplicate directories & files finder (DD&FF)
-либо
-same/equal directories & files finder
-
-по архивам тулза тоже могла бы искать!
+* this utility could also work on archive files.
