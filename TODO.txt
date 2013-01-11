@@ -1,3 +1,5 @@
-﻿* progress bar output.
+﻿* replace string for hashes to array<BYTE> or something.
+
+* progress bar output.
 
 * this utility could also work on archive files.

@@ -6,12 +6,15 @@ Duplicate Directories and Files Finder
 Usage: ddff.exe <directory1> <directory2> ...
 For example: ddff.exe C:\ D:\ E:\
 
+Results saved into ddff_results.txt file (UTF-8 encoded, can be opened at least in notepad).
+
 Some information (partial and full filehashes) are stored into NTFS streams, so the next
 scanning will be much faster.
 
 * Comparison to other duplicate finding utilities:
 
 + Very fast
++ Comparing only file contents, ignoring file name/attributes. 
 + Comparing directories too.
 + Often, two directories contain, let's say, 4 equal files and 5th file is different.
   We handle it too and output these as "common files in directories"
