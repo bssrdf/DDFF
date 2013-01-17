@@ -1,7 +1,9 @@
 LIBS=kernel32.lib user32.lib libboost_wserialization-vc110-mt-s-1_52.lib
 BOOST_LIBS=$(BOOST)stage/lib
-CL_OPTIONS=/Fo$@ /EHsc /DUNICODE /c /Ox /Zi /I$(BOOST)
-LINK_OPTIONS=/OUT:$@ $(LIBS) /LIBPATH:$(BOOST_LIBS)
+
+# compiling for WinXP: http://blogs.msdn.com/b/vcblog/archive/2012/10/08/10357555.aspx
+CL_OPTIONS=/Fo$@ /EHsc /DUNICODE /D_USING_V110_SDK71_ /c /Ox /Zi /I$(BOOST)
+LINK_OPTIONS=/SUBSYSTEM:CONSOLE,5.01 /OUT:$@ $(LIBS) /LIBPATH:$(BOOST_LIBS)
 
 ddff.obj: ddff.cpp
 	cl.exe ddff.cpp $(CL_OPTIONS)
