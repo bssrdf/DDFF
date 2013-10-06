@@ -34,7 +34,7 @@ using namespace boost::adaptors;
 class Node;
 typedef set<Node*> Node_group;
 FileSize be_sure_all_Nodes_have_same_size_and_return_it(const Node_group & n);
-wostream& operator<< (wostream &out, const Node &in);
+wostream& operator<< (wostream &out, const Node &in); // FIXME: make if friend
 wostream& operator<< (wostream &out, const Node_group &in);
 
 typedef string Partial_hash;
@@ -55,7 +55,7 @@ class Node : boost::noncopyable
         bool partial_hash_unique:1;
         bool full_hash_unique:1;
         bool already_dumped:1;
-        Node_group children; // (dir only)
+        Node_group children; // (for dir only)
 
         bool generate_partial_hash();
         bool generate_full_hash();
