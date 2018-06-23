@@ -1,1 +1,3 @@
 ﻿"ddff.exe ." - not working.
+
+"ddff relative_directory" - not working and also getting into infinite loop.

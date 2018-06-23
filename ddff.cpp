@@ -768,3 +768,5 @@ int wmain(int argc, wchar_t** argv)
 
     return 0;
 };
+
+/* vim: set expandtab ts=4 sw=4 : */

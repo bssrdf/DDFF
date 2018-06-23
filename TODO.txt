@@ -1,9 +1,15 @@
 ﻿* replace string for hashes to array<BYTE> or something.
 
 * progress bar output.
+stage1: пройти в начале по всем директориям на глубину в 2. так будем знать примерно
+свое состояние в будущем.
 
 * this utility could also work on archive files.
 
 * work out all FIXMEs in code
 
-* should be running for WinXP
+* should be running on WinXP
+
+* Linux, Mac OS X!
+
+/key - skip 3rd stage

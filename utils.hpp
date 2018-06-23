@@ -37,3 +37,4 @@ wstring size_to_string (FileSize i);
 bool NTFS_stream_get_info_if_exist (wstring fname, FILETIME & ft_out, string & hash_out);
 void NTFS_stream_save_info (wstring fname, FILETIME ft, string info);
 
+/* vim: set expandtab ts=4 sw=4 : */

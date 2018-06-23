@@ -499,3 +499,4 @@ string SHA512_process (set<wstring> s)
     return SHA512_finish_and_get_result (&ctx);
 }
 
+/* vim: set expandtab ts=4 sw=4 : */
